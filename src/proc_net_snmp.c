@@ -22,7 +22,7 @@ int do_proc_net_snmp(int update_every, unsigned long long dt) {
 		do_udp_packets = -1, do_udp_errors = -1;
 
 	if(do_ip_packets == -1)		do_ip_packets 		= config_get_boolean("plugin:proc:/proc/net/snmp", "ipv4 packets", 1);
-	if(do_ip_fragsout == -1)	do_ip_fragsout 		= config_get_boolean("plugin:proc:/proc/net/snmp", "ipv4 fragrments sent", 1);
+	if(do_ip_fragsout == -1)	do_ip_fragsout 		= config_get_boolean("plugin:proc:/proc/net/snmp", "ipv4 fragments sent", 1);
 	if(do_ip_fragsin == -1)		do_ip_fragsin 		= config_get_boolean("plugin:proc:/proc/net/snmp", "ipv4 fragments assembly", 1);
 	if(do_ip_errors == -1)		do_ip_errors 		= config_get_boolean("plugin:proc:/proc/net/snmp", "ipv4 errors", 1);
 	if(do_tcp_sockets == -1)	do_tcp_sockets 		= config_get_boolean("plugin:proc:/proc/net/snmp", "ipv4 TCP connections", 1);
@@ -36,7 +36,7 @@ int do_proc_net_snmp(int update_every, unsigned long long dt) {
 
 	if(!ff) {
 		char filename[FILENAME_MAX + 1];
-		snprintf(filename, FILENAME_MAX, "%s%s", global_host_prefix, "/proc/net/snmp");
+		snprintfz(filename, FILENAME_MAX, "%s%s", global_host_prefix, "/proc/net/snmp");
 		ff = procfile_open(config_get("plugin:proc:/proc/net/snmp", "filename to monitor", filename), " \t:", PROCFILE_FLAG_DEFAULT);
 	}
 	if(!ff) return 1;
@@ -60,7 +60,7 @@ int do_proc_net_snmp(int update_every, unsigned long long dt) {
 
 			words = procfile_linewords(ff, l);
 			if(words < 20) {
-				error("Cannot read /proc/net/snmp Ip line. Expected 20 params, read %d.", words);
+				error("Cannot read /proc/net/snmp Ip line. Expected 20 params, read %u.", words);
 				continue;
 			}
 
@@ -193,7 +193,7 @@ int do_proc_net_snmp(int update_every, unsigned long long dt) {
 
 			words = procfile_linewords(ff, l);
 			if(words < 15) {
-				error("Cannot read /proc/net/snmp Tcp line. Expected 15 params, read %d.", words);
+				error("Cannot read /proc/net/snmp Tcp line. Expected 15 params, read %u.", words);
 				continue;
 			}
 
@@ -306,7 +306,7 @@ int do_proc_net_snmp(int update_every, unsigned long long dt) {
 
 			words = procfile_linewords(ff, l);
 			if(words < 7) {
-				error("Cannot read /proc/net/snmp Udp line. Expected 7 params, read %d.", words);
+				error("Cannot read /proc/net/snmp Udp line. Expected 7 params, read %u.", words);
 				continue;
 			}
 

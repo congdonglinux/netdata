@@ -15,6 +15,7 @@
 #include "popen.h"
 #include "plugin_tc.h"
 #include "main.h"
+#include "../config.h"
 
 #define RRD_TYPE_TC					"tc"
 #define RRD_TYPE_TC_LEN				strlen(RRD_TYPE_TC)
@@ -82,8 +83,6 @@ struct tc_device *tc_device_root = NULL;
 // ----------------------------------------------------------------------------
 // tc_device index
 
-static int tc_device_iterator(avl *a) { if(a) {}; return 0; }
-
 static int tc_device_compare(void* a, void* b) {
 	if(((struct tc_device *)a)->hash < ((struct tc_device *)b)->hash) return -1;
 	else if(((struct tc_device *)a)->hash > ((struct tc_device *)b)->hash) return 1;
@@ -92,31 +91,23 @@ static int tc_device_compare(void* a, void* b) {
 
 avl_tree tc_device_root_index = {
 		NULL,
-		tc_device_compare,
-#ifdef AVL_LOCK_WITH_MUTEX
-		PTHREAD_MUTEX_INITIALIZER
-#else
-		PTHREAD_RWLOCK_INITIALIZER
-#endif
+		tc_device_compare
 };
 
 #define tc_device_index_add(st) avl_insert(&tc_device_root_index, (avl *)(st))
 #define tc_device_index_del(st) avl_remove(&tc_device_root_index, (avl *)(st))
 
-static struct tc_device *tc_device_index_find(const char *id, uint32_t hash) {
-	struct tc_device *result = NULL, tmp;
+static inline struct tc_device *tc_device_index_find(const char *id, uint32_t hash) {
+	struct tc_device tmp;
 	tmp.id = (char *)id;
 	tmp.hash = (hash)?hash:simple_hash(tmp.id);
 
-	avl_search(&(tc_device_root_index), (avl *)&tmp, tc_device_iterator, (avl **)&result);
-	return result;
+	return (struct tc_device *)avl_search(&(tc_device_root_index), (avl *)&tmp);
 }
 
 
 // ----------------------------------------------------------------------------
 // tc_class index
-
-static int tc_class_iterator(avl *a) { if(a) {}; return 0; }
 
 static int tc_class_compare(void* a, void* b) {
 	if(((struct tc_class *)a)->hash < ((struct tc_class *)b)->hash) return -1;
@@ -127,18 +118,17 @@ static int tc_class_compare(void* a, void* b) {
 #define tc_class_index_add(st, rd) avl_insert(&((st)->classes_index), (avl *)(rd))
 #define tc_class_index_del(st, rd) avl_remove(&((st)->classes_index), (avl *)(rd))
 
-static struct tc_class *tc_class_index_find(struct tc_device *st, const char *id, uint32_t hash) {
-	struct tc_class *result = NULL, tmp;
+static inline struct tc_class *tc_class_index_find(struct tc_device *st, const char *id, uint32_t hash) {
+	struct tc_class tmp;
 	tmp.id = (char *)id;
 	tmp.hash = (hash)?hash:simple_hash(tmp.id);
 
-	avl_search(&(st->classes_index), (avl *)&tmp, tc_class_iterator, (avl **)&result);
-	return result;
+	return (struct tc_class *)avl_search(&(st->classes_index), (avl *) &tmp);
 }
 
 // ----------------------------------------------------------------------------
 
-static void tc_class_free(struct tc_device *n, struct tc_class *c) {
+static inline void tc_class_free(struct tc_device *n, struct tc_class *c) {
 	debug(D_TC_LOOP, "Removing from device '%s' class '%s', parentid '%s', leafid '%s', seen=%d", n->id, c->id, c->parentid?c->parentid:"", c->leafid?c->leafid:"", c->seen);
 
 	if(c->next) c->next->prev = c->prev;
@@ -158,7 +148,7 @@ static void tc_class_free(struct tc_device *n, struct tc_class *c) {
 	free(c);
 }
 
-static void tc_device_classes_cleanup(struct tc_device *d) {
+static inline void tc_device_classes_cleanup(struct tc_device *d) {
 	static int cleanup_every = 999;
 
 	if(cleanup_every > 0) {
@@ -183,7 +173,7 @@ static void tc_device_classes_cleanup(struct tc_device *d) {
 	}
 }
 
-static void tc_device_commit(struct tc_device *d)
+static inline void tc_device_commit(struct tc_device *d)
 {
 	static int enable_new_interfaces = -1;
 
@@ -238,7 +228,7 @@ static void tc_device_commit(struct tc_device *d)
 	}
 
 	char var_name[CONFIG_MAX_NAME + 1];
-	snprintf(var_name, CONFIG_MAX_NAME, "qos for %s", d->id);
+	snprintfz(var_name, CONFIG_MAX_NAME, "qos for %s", d->id);
 	if(config_get_boolean("plugin:tc", var_name, enable_new_interfaces)) {
 		RRDSET *st = rrdset_find_bytype(RRD_TYPE_TC, d->id);
 		if(!st) {
@@ -267,7 +257,7 @@ static void tc_device_commit(struct tc_device *d)
 				RRDDIM *rd = rrddim_find(st, c->id);
 
 				if(!rd) {
-					debug(D_TC_LOOP, "TC: Adding to chart '%s', dimension '%s'", st->id, c->id, c->name);
+					debug(D_TC_LOOP, "TC: Adding to chart '%s', dimension '%s' (name: '%s')", st->id, c->id, c->name);
 
 					// new class, we have to add it
 					rd = rrddim_add(st, c->id, c->name?c->name:c->id, 8, 1024, RRDDIM_INCREMENTAL);
@@ -293,7 +283,7 @@ static void tc_device_commit(struct tc_device *d)
 	tc_device_classes_cleanup(d);
 }
 
-static void tc_device_set_class_name(struct tc_device *d, char *id, char *name)
+static inline void tc_device_set_class_name(struct tc_device *d, char *id, char *name)
 {
 	struct tc_class *c = tc_class_index_find(d, id, 0);
 	if(c) {
@@ -307,7 +297,7 @@ static void tc_device_set_class_name(struct tc_device *d, char *id, char *name)
 	}
 }
 
-static void tc_device_set_device_name(struct tc_device *d, char *name) {
+static inline void tc_device_set_device_name(struct tc_device *d, char *name) {
 	if(d->name) free(d->name);
 	d->name = NULL;
 
@@ -317,7 +307,7 @@ static void tc_device_set_device_name(struct tc_device *d, char *name) {
 	}
 }
 
-static void tc_device_set_device_family(struct tc_device *d, char *family) {
+static inline void tc_device_set_device_family(struct tc_device *d, char *family) {
 	if(d->family) free(d->family);
 	d->family = NULL;
 
@@ -328,7 +318,7 @@ static void tc_device_set_device_family(struct tc_device *d, char *family) {
 	// no need for null termination - it is already null
 }
 
-static struct tc_device *tc_device_create(char *id)
+static inline struct tc_device *tc_device_create(char *id)
 {
 	struct tc_device *d = tc_device_index_find(id, 0);
 
@@ -344,14 +334,7 @@ static struct tc_device *tc_device_create(char *id)
 		d->id = strdup(id);
 		d->hash = simple_hash(d->id);
 
-		d->classes_index.root = NULL;
-		d->classes_index.compar = tc_class_compare;
-#ifdef AVL_LOCK_WITH_MUTEX
-		pthread_mutex_init(&d->classes_index.mutex, NULL);
-#else
-		pthread_rwlock_init(&d->classes_index.rwlock, NULL);
-#endif
-
+		avl_init(&d->classes_index, tc_class_compare);
 		tc_device_index_add(d);
 
 		if(!tc_device_root) {
@@ -367,7 +350,7 @@ static struct tc_device *tc_device_create(char *id)
 	return(d);
 }
 
-static struct tc_class *tc_class_add(struct tc_device *n, char *id, char *parentid, char *leafid)
+static inline struct tc_class *tc_class_add(struct tc_device *n, char *id, char *parentid, char *leafid)
 {
 	struct tc_class *c = tc_class_index_find(n, id, 0);
 
@@ -409,7 +392,7 @@ static struct tc_class *tc_class_add(struct tc_device *n, char *id, char *parent
 	return(c);
 }
 
-static void tc_device_free(struct tc_device *n)
+static inline void tc_device_free(struct tc_device *n)
 {
 	if(n->next) n->next->prev = n->prev;
 	if(n->prev) n->prev->next = n->next;
@@ -429,7 +412,7 @@ static void tc_device_free(struct tc_device *n)
 	free(n);
 }
 
-static void tc_device_free_all()
+static inline void tc_device_free_all()
 {
 	while(tc_device_root)
 		tc_device_free(tc_device_root);
@@ -450,7 +433,7 @@ static inline int tc_space(char c) {
 	}
 }
 
-static void tc_split_words(char *str, char **words, int max_words) {
+static inline void tc_split_words(char *str, char **words, int max_words) {
 	char *s = str;
 	int i = 0;
 
@@ -526,7 +509,7 @@ void *tc_main(void *ptr)
 		struct tc_device *device = NULL;
 		struct tc_class *class = NULL;
 
-		snprintf(buffer, TC_LINE_MAX, "exec %s %d", config_get("plugin:tc", "script to run to get tc values", PLUGINS_DIR "/tc-qos-helper.sh"), rrd_update_every);
+		snprintfz(buffer, TC_LINE_MAX, "exec %s %d", config_get("plugin:tc", "script to run to get tc values", PLUGINS_DIR "/tc-qos-helper.sh"), rrd_update_every);
 		debug(D_TC_LOOP, "executing '%s'", buffer);
 		// fp = popen(buffer, "r");
 		fp = mypopen(buffer, &tc_child_pid);
@@ -581,7 +564,7 @@ void *tc_main(void *ptr)
 
 					char leafbuf[20 + 1] = "";
 					if(leafid && leafid[strlen(leafid) - 1] == ':') {
-						strncpy(leafbuf, leafid, 20 - 1);
+						strncpyz(leafbuf, leafid, 20 - 1);
 						strcat(leafbuf, "1");
 						leafid = leafbuf;
 					}
@@ -713,7 +696,8 @@ void *tc_main(void *ptr)
 			//	debug(D_TC_LOOP, "IGNORED line");
 			//}
 		}
-		mypclose(fp, tc_child_pid);
+		// fgets() failed or loop broke
+		int code = mypclose(fp, tc_child_pid);
 		tc_child_pid = 0;
 
 		if(device) {
@@ -728,10 +712,19 @@ void *tc_main(void *ptr)
 			return NULL;
 		}
 
+		if(code == 1 || code == 127) {
+			// 1 = DISABLE
+			// 127 = cannot even run it
+			error("TC: tc-qos-helper.sh exited with code %d. Disabling it.", code);
+
+			tc_device_free_all();
+			pthread_exit(NULL);
+			return NULL;
+		}
+
 		sleep((unsigned int) rrd_update_every);
 	}
 
 	pthread_exit(NULL);
 	return NULL;
 }
-

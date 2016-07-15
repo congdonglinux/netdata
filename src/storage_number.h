@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #ifndef NETDATA_STORAGE_NUMBER_H
 #define NETDATA_STORAGE_NUMBER_H
 
@@ -14,9 +16,8 @@ typedef long double collected_number;
 #define COLLECTED_NUMBER_FORMAT "%0.7Lf"
 */
 
-typedef int32_t storage_number;
-typedef uint32_t ustorage_number;
-#define STORAGE_NUMBER_FORMAT "%d"
+typedef uint32_t storage_number;
+#define STORAGE_NUMBER_FORMAT "%u"
 
 #define SN_NOT_EXISTS		(0x0 << 24)
 #define SN_EXISTS			(0x1 << 24)

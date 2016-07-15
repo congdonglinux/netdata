@@ -16,6 +16,7 @@
 #include "rrd.h"
 #include "popen.h"
 #include "plugins_d.h"
+#include "../config.h"
 
 struct plugind *pluginsd_root = NULL;
 
@@ -124,6 +125,8 @@ void *pluginsd_worker_thread(void *arg)
 	uint32_t STOPPING_WAKE_ME_UP_PLEASE_HASH = simple_hash("STOPPING_WAKE_ME_UP_PLEASE");
 #endif
 
+	size_t count = 0;
+
 	while(likely(1)) {
 		if(unlikely(netdata_exit)) break;
 
@@ -136,7 +139,6 @@ void *pluginsd_worker_thread(void *arg)
 		info("PLUGINSD: '%s' running on pid %d", cd->fullfilename, cd->pid);
 
 		RRDSET *st = NULL;
-		unsigned long long count = 0;
 		char *s;
 		uint32_t hash;
 
@@ -180,9 +182,7 @@ void *pluginsd_worker_thread(void *arg)
 
 				if(unlikely(st->debug)) debug(D_PLUGINSD, "PLUGINSD: '%s' is setting dimension %s/%s to %s", cd->fullfilename, st->id, dimension, value?value:"<nothing>");
 
-				if(value) rrddim_set(st, dimension, atoll(value));
-
-				count++;
+				if(value) rrddim_set(st, dimension, strtoll(value, NULL, 0));
 			}
 			else if(likely(hash == BEGIN_HASH && !strcmp(s, "BEGIN"))) {
 				char *id = words[1];
@@ -218,10 +218,12 @@ void *pluginsd_worker_thread(void *arg)
 					break;
 				}
 
-				if(unlikely(st->debug)) debug(D_PLUGINSD, "PLUGINSD: '%s' is requesting a END on chart %s", cd->fullfilename, st->id);
+				if(unlikely(st->debug)) debug(D_PLUGINSD, "PLUGINSD: '%s' is requesting an END on chart %s", cd->fullfilename, st->id);
 
 				rrdset_done(st);
 				st = NULL;
+
+				count++;
 			}
 			else if(likely(hash == FLUSH_HASH && !strcmp(s, "FLUSH"))) {
 				debug(D_PLUGINSD, "PLUGINSD: '%s' is requesting a FLUSH", cd->fullfilename);
@@ -310,11 +312,11 @@ void *pluginsd_worker_thread(void *arg)
 				}
 
 				long multiplier = 1;
-				if(multiplier_s && *multiplier_s) multiplier = atol(multiplier_s);
+				if(multiplier_s && *multiplier_s) multiplier = strtol(multiplier_s, NULL, 0);
 				if(unlikely(!multiplier)) multiplier = 1;
 
 				long divisor = 1;
-				if(likely(divisor_s && *divisor_s)) divisor = atol(divisor_s);
+				if(likely(divisor_s && *divisor_s)) divisor = strtol(divisor_s, NULL, 0);
 				if(unlikely(!divisor)) divisor = 1;
 
 				if(unlikely(!algorithm || !*algorithm)) algorithm = "absolute";
@@ -350,7 +352,7 @@ void *pluginsd_worker_thread(void *arg)
 #ifdef DETACH_PLUGINS_FROM_NETDATA
 			else if(likely(hash == MYPID_HASH && !strcmp(s, "MYPID"))) {
 				char *pid_s = words[1];
-				pid_t pid = atol(pid_s);
+				pid_t pid = strtod(pid_s, NULL, 0);
 
 				if(likely(pid)) cd->pid = pid;
 				debug(D_PLUGINSD, "PLUGINSD: %s is on pid %d", cd->id, cd->pid);
@@ -385,17 +387,17 @@ void *pluginsd_worker_thread(void *arg)
 				break;
 			}
 		}
-
-		info("PLUGINSD: '%s' on pid %d stopped.", cd->fullfilename, cd->pid);
-
-		// fgets() failed or loop broke
-		int code = mypclose(fp, cd->pid);
-		if(code == 1 || code == 127) {
-			// 1 = DISABLE
-			// 127 = cannot even run it
-			error("PLUGINSD: '%s' (pid %d) exited with code %d. Disabling it.", cd->fullfilename, cd->pid, code);
-			cd->enabled = 0;
+		if(likely(count)) {
+			cd->successful_collections += count;
+			cd->serial_failures = 0;
 		}
+		else
+			cd->serial_failures++;
+
+		info("PLUGINSD: '%s' on pid %d stopped after %zu successful data collections (ENDs).", cd->fullfilename, cd->pid, count);
+
+		// get the return code
+		int code = mypclose(fp, cd->pid);
 
 		if(netdata_exit) {
 			cd->pid = 0;
@@ -405,14 +407,49 @@ void *pluginsd_worker_thread(void *arg)
 			return NULL;
 		}
 
-		if(unlikely(!count && cd->enabled)) {
-			error("PLUGINSD: '%s' (pid %d) does not generate usefull output. Waiting a bit before starting it again.", cd->fullfilename, cd->pid);
-			sleep((unsigned int) (cd->update_every * 10));
-		}
+		if(code != 0) {
+			// the plugin reports failure
 
+			if(likely(!cd->successful_collections)) {
+				// nothing collected - disable it
+				error("PLUGINSD: '%s' exited with error code %d. Disabling it.", cd->fullfilename, code);
+				cd->enabled = 0;
+			}
+			else {
+				// we have collected something
+
+				if(likely(cd->serial_failures <= 10)) {
+					error("PLUGINSD: '%s' exited with error code %d, but has given useful output in the past (%zu times). Waiting a bit before starting it again.", cd->fullfilename, code, cd->successful_collections);
+					sleep((unsigned int) (cd->update_every * 10));
+				}
+				else {
+					error("PLUGINSD: '%s' exited with error code %d, but has given useful output in the past (%zu times). We tried %zu times to restart it, but it failed to generate data. Disabling it.", cd->fullfilename, code, cd->successful_collections, cd->serial_failures);
+					cd->enabled = 0;
+				}
+			}
+		}
+		else {
+			// the plugin reports success
+
+			if(unlikely(!cd->successful_collections)) {
+				// we have collected nothing so far
+
+				if(likely(cd->serial_failures <= 10)) {
+					error("PLUGINSD: '%s' (pid %d) does not generate useful output but it reports success (exits with 0). Waiting a bit before starting it again.", cd->fullfilename, cd->pid);
+					sleep((unsigned int) (cd->update_every * 10));
+				}
+				else {
+					error("PLUGINSD: '%s' (pid %d) does not generate useful output, although it reports success (exits with 0), but we have tried %zu times to collect something. Disabling it.", cd->fullfilename, cd->pid, cd->serial_failures);
+					cd->enabled = 0;
+				}
+			}
+			else
+				sleep((unsigned int) cd->update_every);
+		}
 		cd->pid = 0;
-		if(likely(cd->enabled)) sleep((unsigned int) cd->update_every);
-		else break;
+
+		if(unlikely(!cd->enabled))
+			break;
 	}
 
 	cd->obsolete = 1;
@@ -469,7 +506,7 @@ void *pluginsd_main(void *ptr)
 			}
 
 			char pluginname[CONFIG_MAX_NAME + 1];
-			snprintf(pluginname, CONFIG_MAX_NAME, "%.*s", (int)(len - PLUGINSD_FILE_SUFFIX_LEN), file->d_name);
+			snprintfz(pluginname, CONFIG_MAX_NAME, "%.*s", (int)(len - PLUGINSD_FILE_SUFFIX_LEN), file->d_name);
 			int enabled = config_get_boolean("plugins", pluginname, automatic_run);
 
 			if(unlikely(!enabled)) {
@@ -492,17 +529,17 @@ void *pluginsd_main(void *ptr)
 				cd = calloc(sizeof(struct plugind), 1);
 				if(unlikely(!cd)) fatal("Cannot allocate memory for plugin.");
 
-				snprintf(cd->id, CONFIG_MAX_NAME, "plugin:%s", pluginname);
+				snprintfz(cd->id, CONFIG_MAX_NAME, "plugin:%s", pluginname);
 
-				strncpy(cd->filename, file->d_name, FILENAME_MAX);
-				snprintf(cd->fullfilename, FILENAME_MAX, "%s/%s", dir_name, cd->filename);
+				strncpyz(cd->filename, file->d_name, FILENAME_MAX);
+				snprintfz(cd->fullfilename, FILENAME_MAX, "%s/%s", dir_name, cd->filename);
 
 				cd->enabled = enabled;
 				cd->update_every = (int) config_get_number(cd->id, "update every", rrd_update_every);
 				cd->started_t = time(NULL);
 
 				char *def = "";
-				snprintf(cd->cmd, PLUGINSD_CMD_MAX, "exec %s %d %s", cd->fullfilename, cd->update_every, config_get(cd->id, "command options", def));
+				snprintfz(cd->cmd, PLUGINSD_CMD_MAX, "exec %s %d %s", cd->fullfilename, cd->update_every, config_get(cd->id, "command options", def));
 
 				// link it
 				if(likely(pluginsd_root)) cd->next = pluginsd_root;
@@ -528,5 +565,3 @@ void *pluginsd_main(void *ptr)
 	pthread_exit(NULL);
 	return NULL;
 }
-
-

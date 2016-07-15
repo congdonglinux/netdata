@@ -1,7 +1,8 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 	<title>netdata dashboard</title>
+	<meta name="application-name" content="netdata">
 
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 	<meta charset="utf-8">
@@ -12,7 +13,7 @@
 	<meta name="author" content="costa@tsaousis.gr">
 
 	<link rel="shortcut icon" href="images/seo-performance-multi-size.ico">
-	
+
 	<link rel="apple-touch-icon" href="images/seo-performance-72.png">
 	<link rel="apple-touch-icon" sizes="72x72" href="images/seo-performance-72.png">
 	<link rel="apple-touch-icon" sizes="114x114" href="images/seo-performance-114.png">
@@ -26,9 +27,17 @@
 	<link rel="icon" type="image/png" sizes="24x24" href="images/seo-performance-24.png">
 	<link rel="icon" type="image/png" sizes="16x16" href="images/seo-performance-16.png">
 
+	<meta property="og:locale" content="en_US" />
+	<meta property="og:image" content="http://my-netdata.io/images/post.png"/>
+	<meta property="og:url" content="http://my-netdata.io/"/>
+	<meta property="og:type" content="website"/>
+	<meta property="og:site_name" content="netdata"/>
+	<meta property="og:title" content="netdata - real-time performance monitoring, done right!"/>
+	<meta property="og:description" content="Stunning real-time dashboards, blazingly fast and extremely interactive. Zero configuration, zero dependencies, zero maintenance." />
+
 	<style>
 
-	/* prevent body from hidding under the navbar */
+	/* prevent body from hiding under the navbar */
 	body {
 		padding-top: 50px;
 	}
@@ -48,12 +57,12 @@
 		position: relative;
 		z-index: -2;
 	}
-	h1:before, h2:before { 
-		display: block; 
-		content: " "; 
+	h1:before, h2:before {
+		display: block;
+		content: " ";
 		margin-top: -70px;
 		height: 70px;
-		visibility: hidden; 
+		visibility: hidden;
 	}
 
 	.p {
@@ -74,7 +83,7 @@
 	}
 
 	.chart-message {
-		display: block; 
+		display: block;
 		margin-top: 10px;
 	}
 
@@ -191,6 +200,42 @@
 		font-weight: 500;
 	}
 
+	.dropdown-menu {
+		min-width: 200px;
+	}
+	.dropdown-menu.columns-2 {
+		margin: 0;
+		padding: 0;
+		width: 400px;
+	}
+	.dropdown-menu li a {
+		padding: 5px 15px;
+		font-weight: 300;
+	}
+	.dropdown-menu.multi-column {
+		overflow-x: hidden;
+	}
+	.multi-column-dropdown {
+		list-style: none;
+		padding: 0;
+	}
+	.multi-column-dropdown li a {
+		display: block;
+		clear: both;
+		line-height: 1.428571429;
+		white-space: normal;
+	}
+	.multi-column-dropdown li a:hover {
+		text-decoration: none;
+		color: #f5f5f5;
+		background-color: #262626;
+	}
+	.scrollable-menu {
+		height: auto;
+		max-height: 80vh;
+		overflow-x: hidden;
+	}
+
 	/* Back to top (hidden on mobile) */
 	.back-to-top,
 	.dashboard-theme-toggle {
@@ -280,14 +325,138 @@
 	<!-- you can also give a different server per chart, with the attribute: data-host="http://netdata.server:19999" -->
 	<!-- <script> netdataServer = "http://box:19999"; </script> -->
 
+	<!-- check which theme to use -->
+	<script>
+		function loadLocalStorage(name) {
+			var ret = null;
+
+			try {
+				if(typeof Storage !== "undefined" && typeof localStorage === 'object')
+					ret = localStorage.getItem(name);
+			}
+			catch(error) {
+				;
+			}
+
+			if(typeof ret === 'undefined' || ret === null)
+				return null;
+
+			return ret;
+		}
+
+		function saveLocalStorage(name, value) {
+			try {
+				if(typeof Storage !== "undefined" && typeof localStorage === 'object') {
+					localStorage.setItem(name, value.toString());
+					return true;
+				}
+			}
+			catch(error) {
+				;
+			}
+
+			return false;
+		}
+
+		function getTheme(def) {
+			var ret = loadLocalStorage('netdataTheme');
+			if(typeof ret === 'undefined' || ret === null || ret === 'undefined')
+				return def;
+			else
+				return ret;
+		}
+
+		var netdataTheme = getTheme('slate');
+
+		function setTheme(theme) {
+			if(theme === netdataTheme) return false;
+
+			return saveLocalStorage('netdataTheme', theme);
+		}
+
+		var netdataRegistryCallback = function(machines_array) {
+			var el = '';
+			var a1 = '';
+			var found = 0;
+
+			if(machines_array) {
+				function name_comparator_desc(a, b) {
+					if (a.name > b.name) return -1;
+					if (a.name < b.name) return 1;
+					return 0;
+				}
+
+				var machines = machines_array.sort(name_comparator_desc);
+				var len = machines.length;
+				while(len--) {
+					var u = machines[len];
+					found++;
+					el += '<li id="registry_server_' + u.guid + '"><a class="registry_link" href="' + u.url + '" onClick="return gotoServerModalHandler(\'' + u.guid + '\');">' + u.name + '</a></li>';
+					a1 += '<li id="registry_action_' + u.guid + '"><a href="#" onclick="deleteRegistryModalHandler(\'' + u.guid + '\',\'' + u.name + '\',\'' + u.url + '\'); return false;"><i class="fa fa-trash-o" aria-hidden="true" style="color: #999;"></i></a></li>';
+				}
+			}
+
+			if(!found) {
+				if(machines)
+					el += '<li><a href="https://github.com/firehol/netdata/wiki/mynetdata-menu-item" style="color: #666;" target="_blank">your netdata server list is empty...</a></li>';
+				else
+					el += '<li><a href="https://github.com/firehol/netdata/wiki/mynetdata-menu-item" style="color: #666;" target="_blank">failed to contact the registry...</a></li>';
+
+				a1 += '<li><a href="#" onClick="return false;">&nbsp;</a></li>';
+
+				el += '<li role="separator" class="divider"></li>' +
+						'<li><a href="//london.netdata.rocks/default.html">EU - London (DigitalOcean.com)</a></li>' +
+						'<li><a href="//atlanta.netdata.rocks/default.html">US - Atlanta (CDN77.com)</a></li>' +
+						'<li><a href="//athens.netdata.rocks/default.html">EU - Athens</a></li>';
+				a1 += '<li role="separator" class="divider"></li>' +
+						'<li><a href="#">&nbsp;</a></li>' +
+						'<li><a href="#">&nbsp;</a></li>'+
+						'<li><a href="#">&nbsp;</a></li>';
+			}
+
+			el += '<li role="separator" class="divider"></li>';
+			a1 += '<li role="separator" class="divider"></li>';
+
+			el += '<li><a href="https://github.com/firehol/netdata/wiki/mynetdata-menu-item" style="color: #999;" target="_blank">What is this?</a></li>';
+			a1 += '<li><a href="#" style="color: #999;" onclick="switchRegistryModalHandler(); return false;"><i class="fa fa-cog" aria-hidden="true" style="color: #999;"></i></a></li>'
+
+			document.getElementById('mynetdata_servers').innerHTML = el;
+			document.getElementById('mynetdata_servers2').innerHTML = el;
+			document.getElementById('mynetdata_actions1').innerHTML = a1;
+
+			gotoServerInit();
+		};
+
+	</script>
+
 	<!-- load the dashboard manager - it will do the rest -->
-	<script>var netdataTheme = 'slate';</script>
-	<script type="text/javascript" src="dashboard.js?v25"></script>
+	<script type="text/javascript" src="dashboard.js?v40"></script>
 </head>
 
 <body data-spy="scroll" data-target="#sidebar">
 	<nav class="navbar navbar-default navbar-fixed-top" role="banner">
 		<div class="container">
+			<nav id="mynetdata_nav" class="collapse navbar-collapse navbar-left hidden-sm hidden-xs" role="navigation" style="padding-right: 20px;">
+				<ul class="nav navbar-nav">
+					<li class="dropdown">
+						<a href="#" class="dropdown-toggle" data-toggle="dropdown" id="current_view">my-netdata <strong class="caret"></strong></a>
+						<ul class="dropdown-menu scrollable-menu inpagemenu multi-column columns-2" role="menu">
+							<div class="row">
+								<div class="col-sm-6" style="width: 85%; padding-right: 0;">
+									<ul id="mynetdata_servers" class="multi-column-dropdown">
+										<li><a href="#" onclick="return false;" style="color: #999;">loading...</a></li>
+									</ul>
+								</div>
+								<div class="col-sm-3 hidden-xs" style="width: 15%; padding-left: 0;">
+									<ul id="mynetdata_actions1" class="multi-column-dropdown">
+									<li style="color: #999;">&nbsp;</li>
+									</ul>
+								</div>
+							</div>
+						</ul>
+					</li>
+				</ul>
+			</nav>
 			<div class="navbar-header">
 				<button class="navbar-toggle" type="button" data-toggle="collapse" data-target=".navbar-collapse">
 					<span class="sr-only">Toggle navigation</span>
@@ -299,14 +468,27 @@
 			</div>
 			<nav class="collapse navbar-collapse navbar-right" role="navigation">
 				<ul class="nav navbar-nav">
-					<li><a href="#" class="btn" data-toggle="modal" data-target="#optionsModal"><i class="fa fa-cog"></i> settings</a></li>
-					<li><a href="https://github.com/firehol/netdata/wiki" class="btn" target="_blank"><i class="fa fa-github"></i> community</a></li>
-<!--					<li><a href="old/" class="btn" target="_blank"><i class="fa fa-step-backward"></i> old dashboard</a></li> -->
-					<li><a href="#" class="btn" data-toggle="modal" data-target="#helpModal"><i class="fa fa-question-circle"></i> help</a></li>
-<!--					<li><a href="#sec">Visualize</a></li>
-					<li><a href="#sec">Prototype</a></li>
--->				</ul>
+					<li class="hidden-sm"><a href="#" class="btn" data-toggle="modal" data-target="#optionsModal"><i class="fa fa-cog"></i> settings</a></li>
+					<li class="hidden-sm"><a href="https://github.com/firehol/netdata/wiki" class="btn" target="_blank"><i class="fa fa-github"></i> community</a></li>
+					<li class="hidden-sm" id="updateButton"><a href="#" class="btn" data-toggle="modal" data-target="#updateModal"><i class="fa fa-cloud-download"></i> update</a></li>
+					<li class="hidden-sm"><a href="#" class="btn" data-toggle="modal" data-target="#helpModal"><i class="fa fa-question-circle"></i> help</a></li>
+					<li class="dropdown hidden-md hidden-lg hidden-xs">
+						<a href="#" class="dropdown-toggle" data-toggle="dropdown" id="current_view">Menu <strong class="caret"></strong></a>
+						<ul class="dropdown-menu scrollable-menu inpagemenu" role="menu">
+							<li><a href="#" class="btn" data-toggle="modal" data-target="#optionsModal"><i class="fa fa-cog"></i> settings</a></li>
+							<li><a href="https://github.com/firehol/netdata/wiki" class="btn" target="_blank"><i class="fa fa-github"></i> community</a></li>
+							<li><a href="#" class="btn" data-toggle="modal" data-target="#helpModal"><i class="fa fa-question-circle"></i> help</a></li>
+						</ul>
+					</li>
+					<li class="dropdown hidden-sm hidden-md hidden-lg">
+						<a href="#" class="dropdown-toggle" data-toggle="dropdown" id="current_view">my-netdata <strong class="caret"></strong></a>
+						<ul id="mynetdata_servers2" class="dropdown-menu scrollable-menu inpagemenu" role="menu">
+							<li><a href="#" onclick="return false;" style="color: #999;">loading...</a></li>
+						</ul>
+					</li>
+				</ul>
 			</nav>
+	</nav>
 		</div>
 	</nav>
 
@@ -422,7 +604,7 @@
 				</div>
 				<div class="modal-body">
 						<div class="p">
-						<b><a href="https://github.com/firehol/netdata/wiki" target="_blank">netdata</a></b> is the fastest way to visualize metrics. It is a resource efficient, highly optimized system for collecting and visualizing any type of realtime timeseries data, from CPU usage, disk activity, SQL queries, API calls, web site visitors, etc.
+						<b><a href="https://github.com/firehol/netdata/wiki" target="_blank">netdata</a></b> is the fastest way to visualize metrics. It is a resource efficient, highly optimized system for collecting and visualizing any type of real-time time series data, from CPU usage, disk activity, SQL queries, API calls, web site visitors, etc.
 						</div>
 						<div class="p">
 						<b><a href="https://github.com/firehol/netdata/wiki" target="_blank">netdata</a></b> tries to visualize the truth of <b>now</b>, in its <b>greatest detail</b>, so that you can get insights of what is happening now and what just happened, on your systems and applications.
@@ -494,7 +676,7 @@
 								While pressing the shift key, click on the contents of a chart and move the mouse to select an area, to zoom in. The other charts will follow too. Zooming is performed in two phases:
 								<ul>
 									<li>The already loaded chart contents are zoomed (low resolution)</li>
-									<li>New data are transfered from the netdata server, to refresh the chart with possibly more detail.</li>
+									<li>New data are transferred from the netdata server, to refresh the chart with possibly more detail.</li>
 								</ul>
 								Once a chart is zoomed, auto refreshing stops for all charts. To enable it again, <b>double click</b> a zoomed chart.
 							</div>
@@ -508,9 +690,9 @@
 							<hr/>
 							<div class="p">
 								<h4>Legend Operations</h4>
-								Click on the label or value of a dimension, will select / unselect this dimension.
+								Click on the label or value of a dimension, will select / un-select this dimension.
 								<br/>
-								You can press any of the SHIFT or CONTROL keys and then click on legend labels or values, to select / unselect multiple dimensions.
+								You can press any of the SHIFT or CONTROL keys and then click on legend labels or values, to select / un-select multiple dimensions.
 							</div>
 						</div>
 						<div role="tabpanel" class="tab-pane" id="help_touch">
@@ -544,7 +726,7 @@
 							<hr/>
 							<div class="p">
 								<h4>Legend Operations</h4>
-								Tap on the label or value of a dimension, will select / unselect this dimension.
+								Tap on the label or value of a dimension, will select / un-select this dimension.
 							</div>
 						</div>
 					</div>
@@ -565,9 +747,11 @@
 				</div>
 				<div class="modal-body">
 					<center>
-						<small style="color: #BBBBBB;">Settings take effect immediately and are saved permanently to browser local storage (except the refresh on focus / always option).
+						<small style="color: #BBBBBB;">These are browser settings. Each viewer has its own. They do not affect the operation of your netdata server.
 						<br/>
-						To reset all options (including charts sizes) to their defaults, click <a href="#" onclick="NETDATA.resetOptions(); return false;">here</a>.</small>
+						Settings take effect immediately and are saved permanently to browser local storage (except the refresh on focus / always option).
+						<br/>
+						To reset all options (including charts sizes) to their defaults, click <a href="#" onclick="resetDashboardOptions(); return false;">here</a>.</small>
 					</center>
 					<div style="padding: 10px;"></div>
 
@@ -581,7 +765,7 @@
 					<!-- Tab panes -->
 					<div class="tab-content">
 						<div role="tabpanel" class="tab-pane active" id="settings_performance">
-							<form id="optionsForm" method="get" class="form-horizontal">
+							<form id="optionsForm1" method="get" class="form-horizontal">
 								<div class="form-group">
 									<table>
 									<tr class="option-row">
@@ -595,7 +779,7 @@
 										<input id="eliminate_zero_dimensions" type="checkbox" checked data-toggle="toggle" data-on="Non Zero" data-off="All" data-width="110px">
 										</td>
 										<td class="option-info"><strong>Which dimensions to show?</strong><br/>
-											<small>When set to <b>Non Zero</b>, dimensions that have all their values (within the current view) set to zero will not be transfered from the netdata server (except if all dimensions of the chart are zero, in which case this setting does nothing - all dimensions are transfered and shown). When set to <b>All</b>, all dimensions will always be shown. Set it to <b>Non Zero</b> to lower the data transfered between netdata and your browser, lower the CPU requirements of your browser (fewer lines to draw) and increase the focus on the legends (fewer entries at the legends).</small>
+											<small>When set to <b>Non Zero</b>, dimensions that have all their values (within the current view) set to zero will not be transferred from the netdata server (except if all dimensions of the chart are zero, in which case this setting does nothing - all dimensions are transferred and shown). When set to <b>All</b>, all dimensions will always be shown. Set it to <b>Non Zero</b> to lower the data transferred between netdata and your browser, lower the CPU requirements of your browser (fewer lines to draw) and increase the focus on the legends (fewer entries at the legends).</small>
 										</td>
 										</tr>
 									<tr class="option-row">
@@ -609,13 +793,13 @@
 							</form>
 						</div>
 						<div role="tabpanel" class="tab-pane" id="settings_sync">
-							<form id="optionsForm" method="get" class="form-horizontal">
+							<form id="optionsForm2" method="get" class="form-horizontal">
 								<div class="form-group">
 									<table>
 									<tr class="option-row">
-										<td class="option-control"><input id="parallel_refresher" type="checkbox" checked data-toggle="toggle" data-on="Parallel" data-off="Sequencial" data-width="110px"></td>
+										<td class="option-control"><input id="parallel_refresher" type="checkbox" checked data-toggle="toggle" data-on="Parallel" data-off="Sequential" data-width="110px"></td>
 										<td class="option-info"><strong>Which chart refresh policy to use?</strong><br/>
-											<small>When set to <b>parallel</b>, visible charts are refreshed in parallel (all queries are sent to netdata server in parallel) and are rendered asynchronously. When set to <b>sequencial</b> charts are refreshed one after another. Set it to parallel if your browser can cope with it (most modern browsers do), set it to sequencial if you work on an older/slower computer.</small>
+											<small>When set to <b>parallel</b>, visible charts are refreshed in parallel (all queries are sent to netdata server in parallel) and are rendered asynchronously. When set to <b>sequential</b> charts are refreshed one after another. Set it to parallel if your browser can cope with it (most modern browsers do), set it to sequential if you work on an older/slower computer.</small>
 										</td>
 										</tr>
 									<tr class="option-row" id="concurrent_refreshes_row">
@@ -651,9 +835,27 @@
 							</form>
 						</div>
 						<div role="tabpanel" class="tab-pane" id="settings_visual">
-							<form id="optionsForm" method="get" class="form-horizontal">
+							<form id="optionsForm3" method="get" class="form-horizontal">
 								<div class="form-group">
 									<table>
+									<tr class="option-row">
+										<td class="option-control"><input id="netdata_theme_control" type="checkbox" checked data-toggle="toggle" data-offstyle="danger" data-onstyle="success" data-on="Dark" data-off="White" data-width="110px"></td>
+										<td class="option-info"><strong>Which theme to use?</strong><br/>
+											<small>Netdata comes with two themes: <b>Dark</b> (the default) and <b>White</b>.
+											<br/>
+											<b>Switching this will reload the dashboard</b>.
+											</small>
+										</td>
+										</tr>
+									<tr class="option-row">
+										<td class="option-control"><input id="show_help" type="checkbox" checked data-toggle="toggle" data-on="Help Me" data-off="No Help" data-width="110px"></td>
+										<td class="option-info"><strong>Do you need help?</strong><br/>
+											<small>Netdata can show some help in some areas to help you use the dashboard. If all these balloons bother you, disable them using this switch.
+											<br/>
+											<b>Switching this will reload the dashboard</b>.
+											</small>
+										</td>
+										</tr>
 									<tr class="option-row">
 										<td class="option-control"><input id="pan_and_zoom_data_padding" type="checkbox" checked data-toggle="toggle"  data-on="Pad" data-off="Don't Pad" data-width="110px"></td>
 										<td class="option-info"><strong>Enable data padding when panning and zooming?</strong><br/>
@@ -663,7 +865,9 @@
 									<tr class="option-row">
 										<td class="option-control"><input id="smooth_plot" type="checkbox" checked data-toggle="toggle"  data-on="Smooth" data-off="Rough" data-width="110px"></td>
 										<td class="option-info"><strong>Enable Bézier lines on charts?</strong><br/>
-											<small>When set to <b>Smooth</b> the charts libraries that support it, will plot smooth curves instead of simple straight lines to connect the points.</small>
+											<small>When set to <b>Smooth</b> the charts libraries that support it, will plot smooth curves instead of simple straight lines to connect the points.
+											<br/>
+											Keep in mind <a href="http://dygraphs.com" target="_blank">dygraphs</a>, the main charting library in netdata dashboards, can only smooth line charts. It cannot smooth area or stacked charts. When set to <b>Rough</b>, this setting can lower the CPU resources consumed by your browser.</small>
 										</td>
 										</tr>
 									</table>
@@ -679,15 +883,267 @@
 		</div>
 	</div>
 
-</body>
-</html>
+
+	<div class="modal fade" id="updateModal" tabindex="-1" role="dialog" aria-labelledby="updateModalLabel">
+		<div class="modal-dialog" role="document">
+			<div class="modal-content">
+				<div class="modal-header">
+					<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+					<h4 class="modal-title" id="updateModalLabel">Update Check</h4>
+				</div>
+				<div class="modal-body">
+					Your netdata version: <b><code><span id="netdataVersion">Unknown</span></code></b>
+					<br/>
+					<div style="padding: 10px;"></div>
+					<div id="versionCheckLog">Not checked yet. Please press the Check Now button.</div>
+				</div>
+				<div class="modal-footer">
+					<a href="#" onclick="notifyForUpdate(true); return false;" type="button" class="btn btn-default">Check Now</a>
+					<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="modal fade" id="deleteRegistryModal" tabindex="-1" role="dialog" aria-labelledby="deleteRegistryModalLabel">
+		<div class="modal-dialog" role="document">
+			<div class="modal-content">
+				<div class="modal-header">
+					<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+					<h4 class="modal-title" id="deleteRegistryModalLabel">Delete <span id="deleteRegistryServerName"></span>?</h4>
+				</div>
+				<div class="modal-body">
+					You are about to delete, from your personal list of netdata servers, the following server:
+					<p style="text-align: center; padding-top: 10px; padding-bottom: 10px; line-height: 2;">
+					<b><span id="deleteRegistryServerName2"></span></b>
+					<br/>
+					<b><span id="deleteRegistryServerURL"></span></b>
+					</p>
+					Are you sure you want to do this?
+					<br/>
+					<div style="padding: 10px;"></div>
+					<small>Keep in mind, this server will be added back if and when you visit it again.</small>
+					<br/>
+					<div id="deleteRegistryResponse" style="display: block; width: 100%; text-align: center; padding-top: 20px;"></div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-success" data-dismiss="modal">keep it</button>
+					<a href="#" onclick="notifyForDeleteRegistry(true); return false;" type="button" class="btn btn-danger">delete it</a>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="modal fade" id="switchRegistryModal" tabindex="-1" role="dialog" aria-labelledby="switchRegistryModalLabel">
+		<div class="modal-dialog" role="document">
+			<div class="modal-content">
+				<div class="modal-header">
+					<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+					<h4 class="modal-title" id="switchRegistryModalLabel">Switch Netdata Registry Identity</h4>
+				</div>
+				<div class="modal-body">
+					You can copy and paste the following ID to all your browsers (e.g. work and home).
+					<br/>
+					All the browsers with the same ID will identify <b>you</b>, so please don't share this with others.
+					<p style="text-align: center; padding-top: 10px; padding-bottom: 10px; line-height: 2;">
+					<form action="#">
+					<input type="text" class="form-control" id="switchRegistryPersonGUID" placeholder="your personal ID" maxlength="36" autocomplete="off" style="text-align: center; font-size: 1.4em;">
+					</form>
+					</p>
+					Either copy this ID and paste it to another browser, or paste here the ID you have taken from another browser.
+					<p style="padding-top: 10px;"><small>
+						Keep in mind that:
+						<ul>
+							<li>when you switch ID, your previous ID will be lost forever - this is irreversible.</li>
+							<li>both IDs (your old and the new) must list this netdata at their personal lists.</li>
+							<li>both IDs have to be known by the registry: <b><span id="switchRegistryURL"></span></b>.</li>
+							<li>to get a new ID, just clear your browser cookies.</li>
+						</ul>
+					</small></p>
+					<div id="switchRegistryResponse" style="display: block; width: 100%; text-align: center; padding-top: 20px;"></div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-success" data-dismiss="modal">cancel</button>
+					<a href="#" onclick="notifyForSwitchRegistry(true); return false;" type="button" class="btn btn-danger">impersonate</a>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="modal fade" id="gotoServerModal" tabindex="-1" role="dialog" aria-labelledby="gotoServerModalLabel">
+		<div class="modal-dialog" role="document">
+			<div class="modal-content">
+				<div class="modal-header">
+					<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+					<h4 class="modal-title" id="gotoServerModalLabel"><span id="gotoServerName"></span></h4>
+				</div>
+				<div class="modal-body">
+					Checking known URLs for this server...
+					<div  style="padding-top: 20px;">
+						<table id="gotoServerList">
+						</table>
+					</div>
+					<p style="padding-top: 10px;"><small>
+						Checks may fail if you are viewing an HTTPS page and the server to be checked is HTTP only.
+					</small></p>
+					<div id="gotoServerResponse" style="display: block; width: 100%; text-align: center; padding-top: 20px;"></div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
 <script>
+var this_is_demo = null;
+function isdemo() {
+	if(this_is_demo !== null) return this_is_demo;
+	this_is_demo = false;
 
-var demo_hostname = 'netdata.firehol.org';
-// var demo_hostname = 'box';
+	try {
+		if(typeof document.location.hostname === 'string') {
+			if(document.location.hostname.endsWith('.my-netdata.io') ||
+					document.location.hostname.endsWith('.mynetdata.io') ||
+					document.location.hostname.endsWith('.netdata.rocks') ||
+					document.location.hostname.endsWith('.firehol.org') ||
+					document.location.hostname.endsWith('.netdata.online'))
+					this_is_demo = true;
+		}
+	}
+	catch(error) {
+		;
+	}
 
-if(document.location.hostname === demo_hostname) {
+	return this_is_demo;
+}
+
+if(isdemo()) {
 	document.getElementById('masthead').style.display = 'block';
+}
+var gotoServerValidateRemaining = 0;
+var gotoServerMiddleClick = false;
+var gotoServerStop = false;
+function gotoServerValidateUrl(id, guid, url) {
+	var penaldy = 0;
+	if(document.location.toString().startsWith('http://') && url.toString().startsWith('https://'))
+			// we penalize https only if the current url is http
+			// to allow the user walk through all its servers.
+			penaldy = 500;
+
+	setTimeout(function() {
+		document.getElementById('gotoServerList').innerHTML += '<tr><td style="padding-left: 20px;"><a href="' + url + '" target="_blank">' + url + '</a></td><td style="padding-left: 30px;"><code id="' + guid + '-' + id + '-status">checking...</code></td></tr>';
+
+		NETDATA.registry.hello(url, function(data) {
+			if (data) {
+				// console.log('OK ' + id + ' URL: ' + url);
+				document.getElementById(guid + '-' + id + '-status').innerHTML = "OK";
+				var hash = document.location.hash || '';
+
+				if(!gotoServerStop) {
+					gotoServerStop = true;
+
+					if(gotoServerMiddleClick) {
+						window.open(url + hash, '_blank');
+						gotoServerMiddleClick = false;
+						document.getElementById('gotoServerResponse').innerHTML = '<b>Opening new window to ' + NETDATA.registry.machines[guid].name + '<br/><a href="' + url + hash + '">' + url + hash + '</a></b><br/>(check your pop-up blocker if it fails)';
+					}
+					else
+						document.location = url + hash;
+				}
+			}
+			else {
+				document.getElementById(guid + '-' + id + '-status').innerHTML = "failed!";
+				gotoServerValidateRemaining--;
+				if(gotoServerValidateRemaining <= 0) {
+					gotoServerMiddleClick = false;
+					document.getElementById('gotoServerResponse').innerHTML = '<b>Sorry! I cannot find any operational URL for this server</b>';
+				}
+			}
+		});
+	}, (id * 50) + penaldy);
+}
+
+function gotoServerModalHandler(guid) {
+	// console.log('goto server: ' + guid);
+
+	gotoServerStop = false;
+	var len = NETDATA.registry.machines[guid].alternate_urls.length;
+
+	document.getElementById('gotoServerResponse').innerHTML = '';
+	document.getElementById('gotoServerList').innerHTML = '';
+	document.getElementById('gotoServerName').innerHTML = NETDATA.registry.machines[guid].name;
+	$('#gotoServerModal').modal('show');
+
+	gotoServerValidateRemaining = len;
+	while(len--)
+		gotoServerValidateUrl(len, guid, NETDATA.registry.machines[guid].alternate_urls[len]);
+
+	return false;
+}
+
+function gotoServerInit() {
+	$(".registry_link").on('click', function(e) {
+		if(e.which === 2) {
+			e.preventDefault();
+			gotoServerMiddleClick = true;
+		}
+		else {
+			gotoServerMiddleClick = false;
+		}
+
+		return true;
+	});
+}
+
+function switchRegistryModalHandler() {
+	document.getElementById('switchRegistryPersonGUID').value = NETDATA.registry.person_guid;
+	document.getElementById('switchRegistryURL').innerHTML = NETDATA.registry.server;
+	document.getElementById('switchRegistryResponse').innerHTML = '';
+	$('#switchRegistryModal').modal('show');
+}
+
+function notifyForSwitchRegistry() {
+	var n = document.getElementById('switchRegistryPersonGUID').value;
+
+	if(n !== '' && n.length === 36) {
+		NETDATA.registry.switch(n, function(result) {
+			if(result !== null) {
+				$('#switchRegistryModal').modal('hide');
+				NETDATA.registry.init();
+			}
+			else {
+				document.getElementById('switchRegistryResponse').innerHTML = "<b>Sorry! The registry rejected your request.</b>";
+			}
+		});
+	}
+	else
+		document.getElementById('switchRegistryResponse').innerHTML = "<b>The ID you have entered is not a GUID.</b>";
+}
+
+var deleteRegistryUrl = null;
+function deleteRegistryModalHandler(guid, name, url) {
+	deleteRegistryUrl = url;
+	document.getElementById('deleteRegistryServerName').innerHTML = name;
+	document.getElementById('deleteRegistryServerName2').innerHTML = name;
+	document.getElementById('deleteRegistryServerURL').innerHTML = url;
+	document.getElementById('deleteRegistryResponse').innerHTML = '';
+	$('#deleteRegistryModal').modal('show');
+}
+
+function notifyForDeleteRegistry() {
+	if(deleteRegistryUrl) {
+		NETDATA.registry.delete(deleteRegistryUrl, function(result) {
+			if(result !== null) {
+				deleteRegistryUrl = null;
+				$('#deleteRegistryModal').modal('hide');
+				NETDATA.registry.init();
+			}
+			else {
+				document.getElementById('deleteRegistryResponse').innerHTML = "<b>Sorry! this command was rejected by the registry server.</b>";
+			}
+		});
+	}
 }
 
 var options = {
@@ -703,7 +1159,7 @@ var options = {
 	chartsPerRow: 0,
 	chartsMinWidth: 1450,
 	chartsHeight: 180,
-	sparklinesHeight: 60
+	sparklinesHeight: 60,
 };
 
 // generate a sparkline
@@ -763,15 +1219,30 @@ function sortObjectByPriority(object) {
 	return sorted;
 }
 
+
+// ----------------------------------------------------------------------------
+// scroll to a section, without changing the browser history
+
+function scrollToId(hash) {
+	if(hash && hash != '') {
+		var offset = $('#' + hash).offset();
+		if(typeof offset !== 'undefined')
+			$('html, body').animate({ scrollTop: offset.top }, 0);
+	}
+
+	// we must return false to prevent the default action
+	return false;
+}
+
 // ----------------------------------------------------------------------------
 
 function gaugeChart(title, width, dimensions, colors) {
 	if(typeof colors === 'undefined')
 		colors = '';
-	
+
 	if(typeof dimensions === 'undefined')
 		dimensions = '';
-	
+
 	return '<div data-netdata="CHART_UNIQUE_ID"'
 							+ ' data-dimensions="' + dimensions + '"'
 							+ ' data-chart-library="gauge"'
@@ -813,6 +1284,11 @@ var menuData = {
 		info: undefined
 	},
 
+	'ipv6': {
+		title: 'IPv6 Networking',
+		info: undefined
+	},
+
 	'ipvs': {
 		title: 'IP Virtual Server',
 		info: undefined
@@ -835,7 +1311,7 @@ var menuData = {
 
 	'disk': {
 		title: 'Disks',
-		info: undefined
+		info: 'Charts with performance information for all the system disks. Special care has been given to present disk performance metrics in a way compatible with <code>iostat -x</code>. netdata by default prevents rendering performance charts for individual partitions and unmounted virtual disks. Disabled charts can still be enabled by altering the relative settings in the netdata configuration file.'
 	},
 
 	'sensors': {
@@ -850,7 +1326,19 @@ var menuData = {
 
 	'apps': {
 		title: 'Applications',
-		info: 'Per application statistics are collected using netdata\'s <code>apps.plugin</code>. This plugin walks through the entire <code>/proc</code> filesystem and aggregates statistics for applications of interest, defined in <code>/etc/netdata/apps_groups.conf</code> (the default is <a href="https://github.com/firehol/netdata/blob/master/conf.d/apps_groups.conf" target="_blank">here</a>). The plugin internaly builds a process tree (much like <code>ps fax</code> does), and groups processes together (evaluating both child and parent processes) so that the result is always a chart with a predefined set of dimensions (of course, only application groups found running are reported).<br/><b>IMPORTANT</b>: The values shown here are not 100% accurate. They only include values for the processes running. If an application is spawning childs continiously, which are terminated in just a few milliseconds (like shell scripts do), the values reported will be inaccurate. Linux does report the values for the exited childs of a process. However, these values are reported to the parent process <b>only when the child exits</b>. If these values, of the exited child processes, were also aggregated in the charts below, the charts would have been full of spikes, presenting unrealisting utilization for each process group. So, we decided to ignore these values and present only the utilization of <b>the currently running processes</b>.',
+		info: 'Per application statistics are collected using netdata\'s <code>apps.plugin</code>. This plugin walks through the entire <code>/proc</code> filesystem and aggregates statistics for applications of interest, defined in <code>/etc/netdata/apps_groups.conf</code> (the default is <a href="https://github.com/firehol/netdata/blob/master/conf.d/apps_groups.conf" target="_blank">here</a>). The plugin internally builds a process tree (much like <code>ps fax</code> does), and groups processes together (evaluating both child and parent processes) so that the result is always a chart with a predefined set of dimensions (of course, only application groups found running are reported). The reported values are compatible with <code>top</code>, although the netdata plugin counts also the resources of exited children (unlike <code>top</code> which shows only the resources of the currently running processes). So for processes like shell scripts, the reported values include the resources used by the commands these scripts run within each timeframe.',
+		height: 1.5
+	},
+
+	'users': {
+		title: 'Users',
+		info: 'Per user statistics are collected using netdata\'s <code>apps.plugin</code>. This plugin walks through the entire <code>/proc</code> filesystem and aggregates statistics per user. The reported values are compatible with <code>top</code>, although the netdata plugin counts also the resources of exited children (unlike <code>top</code> which shows only the resources of the currently running processes). So for processes like shell scripts, the reported values include the resources used by the commands these scripts run within each timeframe.',
+		height: 1.5
+	},
+
+	'groups': {
+		title: 'User Groups',
+		info: 'Per user group statistics are collected using netdata\'s <code>apps.plugin</code>. This plugin walks through the entire <code>/proc</code> filesystem and aggregates statistics per user group. The reported values are compatible with <code>top</code>, although the netdata plugin counts also the resources of exited children (unlike <code>top</code> which shows only the resources of the currently running processes). So for processes like shell scripts, the reported values include the resources used by the commands these scripts run within each timeframe.',
 		height: 1.5
 	},
 
@@ -863,15 +1351,75 @@ var menuData = {
 		title: 'Example Charts',
 		info: undefined
 	},
+
+	'cgroup': {
+		title: 'Container',
+		info: undefined
+	},
+
+	'mysql': {
+		title: 'MySQL',
+		info: undefined
+	},
+
+	'redis': {
+		title: 'Redis',
+		info: undefined
+	},
+
+	'phpfpm': {
+		title: 'PHP-FPM',
+		info: undefined,
+	},
+
+	'nginx': {
+		title: 'nginx',
+		info: undefined,
+	},
+
+	'apache': {
+		title: 'Apache',
+		info: undefined,
+	},
+
+	'named': {
+		title: 'named',
+		info: undefined
+	}
 };
 
 var submenuData = {
 	'mem.ksm': {
 		title: 'Memory Deduper',
-		info: 'Kernel Same-page Merging (KSM) is the kernel memory de-duper.'
+		info: 'Kernel Same-page Merging (KSM) performance monitoring, read from several files in <code>/sys/kernel/mm/ksm/</code>. KSM is a memory-saving de-duplication feature in the Linux kernel (since version 2.6.32). The KSM daemon ksmd periodically scans those areas of user memory which have been registered with it, looking for pages of identical content which can be replaced by a single write-protected page (which is automatically copied if a process later wants to update its content). KSM was originally developed for use with KVM (where it was known as Kernel Shared Memory), to fit more virtual machines into physical memory, by sharing the data common between them.  But it can be useful to any application which generates many instances of the same data.'
+	},
+
+	'netfilter.conntrack': {
+		title: 'Connection Tracker',
+		info: 'Netfilter Connection Tracker performance monitoring, read from <code>/proc/net/stat/nf_conntrack</code>. The connection tracker keeps track of all connections of the machine, inbound and outbound. It works by keeping a database with all open connections, tracking network and address translation and connection expectations.'
+	},
+
+	'netfilter.nfacct': {
+		title: 'Bandwidth Accounting',
+		info: 'The following information is read using the <code>nfacct.plugin</code>.'
+	},
+
+	'netfilter.synproxy': {
+		title: 'DDoS Protection',
+		info: 'DDoS Protection performance monitoring read from <code>/proc/net/stat/synproxy</code>. <a href="https://github.com/firehol/firehol/wiki/Working-with-SYNPROXY" target="_blank">SYNPROXY</a> is a TCP SYN packets proxy. It is used to protect any TCP server (like a web server) from SYN floods and similar DDoS attacks. It is a netfilter module, in the Linux kernel (since version 3.12). It is optimized to handle millions of packets per second utilizing all CPUs available without any concurrency locking between the connections. It can be used for any kind of TCP traffic (even encrypted), since it does not interfere with the content itself.'
 	}
 };
 
+//
+// chartData works on the context of a chart
+// Its purpose is to set:
+//
+// info: the text above the charts
+// heads: the representation of the chart at the top the subsection (second level menu)
+// mainheads: the representation of the chart at the top of the section (first level menu)
+// colors: the dimension colors of the chart (the default colors are appended)
+// height: the ratio of the chart height relative to the default
+//
 var chartData = {
 	'system.cpu': {
 		info: 'Total CPU utilization (all cores). 100% here means there is no CPU idle time at all. You can get per core usage at the <a href="#cpu">CPUs</a> section and per application usage at the <a href="#apps">Applications Monitoring</a> section.<br/>Keep an eye on <b>iowait</b> ' + sparkline('system.cpu', 'iowait', '%') + '. If it is constantly high, your disks are a bottleneck and they slow your system down.<br/>Another important metric worth monitoring, is <b>softirq</b> ' + sparkline('system.cpu', 'softirq', '%') + '. A constantly high percentage of softirq may indicate network drivers issues.'
@@ -931,11 +1479,15 @@ var chartData = {
 
 	'system.idlejitter': {
 		colors: '#5555AA',
-		info: 'Idle jitter is calculated by netdata. A thread is spawned that requests to sleep for a few microseconds. When the system wakes it up, it measures how many microseconds have passed. The different between the requested and the actual duration of the sleep, is the <b>idle jitter</b>. This number is useful in realtime environments, where CPU jitter can affect the quality of the service (like VoIP media gateways).'
+		info: 'Idle jitter is calculated by netdata. A thread is spawned that requests to sleep for a few microseconds. When the system wakes it up, it measures how many microseconds have passed. The difference between the requested and the actual duration of the sleep, is the <b>idle jitter</b>. This number is useful in real-time environments, where CPU jitter can affect the quality of the service (like VoIP media gateways).'
 	},
 
 	'system.ipv4': {
-		info: 'Total IPv4 Traffic, read from <code>/proc/net/netstat</code>. This includes <code>lo</code> device traffic.'
+		info: 'Total IPv4 Traffic, read from <code>/proc/net/netstat</code>.'
+	},
+
+	'system.ipv6': {
+		info: 'Total IPv6 Traffic, read from <code>/proc/net/snmp6</code>.'
 	},
 
 	'system.ram': {
@@ -945,6 +1497,9 @@ var chartData = {
 	'system.swap': {
 		info: 'System swap memory, read from <code>/proc/meminfo</code>.'
 	},
+
+	// ------------------------------------------------------------------------
+	// MEMORY
 
 	'mem.ksm_savings': {
 		heads: [
@@ -974,6 +1529,9 @@ var chartData = {
 		colors: NETDATA.colors[3]
 	},
 
+	// ------------------------------------------------------------------------
+	// APPS
+
 	'apps.cpu': {
 		height: 2.0
 	},
@@ -986,6 +1544,39 @@ var chartData = {
 		height: 2.0
 	},
 
+	// ------------------------------------------------------------------------
+	// USERS
+
+	'users.cpu': {
+		height: 2.0
+	},
+
+	'users.preads': {
+		height: 2.0
+	},
+
+	'users.pwrites': {
+		height: 2.0
+	},
+
+	// ------------------------------------------------------------------------
+	// GROUPS
+
+	'groups.cpu': {
+		height: 2.0
+	},
+
+	'groups.preads': {
+		height: 2.0
+	},
+
+	'groups.pwrites': {
+		height: 2.0
+	},
+
+	// ------------------------------------------------------------------------
+	// NETWORK QoS
+
 	'tc.qos': {
 		heads: [
 			function(id) {
@@ -997,6 +1588,9 @@ var chartData = {
 		]
 	},
 
+	// ------------------------------------------------------------------------
+	// NETWORK INTERFACES
+
 	'net.net': {
 		heads: [
 			gaugeChart('Received', '12%', 'received'),
@@ -1004,23 +1598,8 @@ var chartData = {
 		]
 	},
 
-	'disk.util': {
-		colors: '#FF5588',
-		heads: [
-			gaugeChart('Utilization', '12%', '', '#FF5588')
-		]
-	},
-
-	'disk.backlog': {
-		colors: '#0099CC'
-	},
-
-	'disk.io': {
-		heads: [
-			gaugeChart('Read', '12%', 'reads'),
-			gaugeChart('Write', '12%', 'writes')
-		]
-	},
+	// ------------------------------------------------------------------------
+	// NETFILTER
 
 	'netfilter.sockets': {
 		colors: '#88AA00',
@@ -1035,21 +1614,111 @@ var chartData = {
 		]
 	},
 
+	// ------------------------------------------------------------------------
+	// DISKS
+
+	'disk.util': {
+		colors: '#FF5588',
+		heads: [
+			gaugeChart('Utilization', '12%', '', '#FF5588')
+		],
+		info: 'Disk Utilization measures the amount of time the disk was busy with something. This is not related to its performance. 100% means that the Linux kernel always had an outstanding operation on the disk. Keep in mind that depending on the underlying technology of the disk, 100% here may or may not be an indication of congestion.'
+	},
+
+	'disk.backlog': {
+		colors: '#0099CC',
+		info: 'Backlog is an indication of the duration of pending disk operations. On every I/O event the Linux kernel is multiplying the time spent doing I/O since the last update of this field with the number of pending operations. While not accurate, this metric can provide an indication of the expected completion time of the operations in progress.'
+	},
+
+	'disk.io': {
+		heads: [
+			gaugeChart('Read', '12%', 'reads'),
+			gaugeChart('Write', '12%', 'writes')
+		],
+		info: 'Amount of data transferred to and from disk.'
+	},
+
+	'disk.ops': {
+		info: 'Completed disk I/O operations. Keep in mind the number of operations requested might be higher, since the Linux kernel is able to merge adjacent to each other (see merged operations chart).'
+	},
+
+	'disk.qops': {
+		info: 'I/O operations currently in progress. This metric is a snapshot - it is not an average over the last interval.'
+	},
+
 	'disk.iotime': {
-		height: 0.5
+		height: 0.5,
+		info: 'The sum of the duration of all completed I/O operations. This number can exceed the interval if the disk is able to execute I/O operations in parallel.'
 	},
 	'disk.mops': {
-		height: 0.5
+		height: 0.5,
+		info: 'The number of merged disk operations. The Linux kernel is able to merge adjacent I/O operations, for example two 4KB reads can become one 8KB read before given to disk.'
 	},
 	'disk.svctm': {
-		height: 0.5
+		height: 0.5,
+		info: 'The average service time for completed I/O operations. This metric is calculated using the total busy time of the disk and the number of completed operations. If the disk is able to execute multiple parallel operations the reporting average service time will be misleading.'
 	},
 	'disk.avgsz': {
-		height: 0.5
+		height: 0.5,
+		info: 'The average I/O operation size.'
 	},
 	'disk.await': {
-		height: 0.5
+		height: 0.5,
+		info: 'The average time for I/O requests issued to the device to be served. This includes the time spent by the requests in queue and the time spent servicing them.'
 	},
+
+	'disk.space': {
+		info: 'Disk space utilization. reserved for root is automatically reserved by the system to prevent the root user from getting out of space.'
+	},
+	'disk.inodes': {
+		info: 'inodes (or index nodes) are filesystem objects (e.g. files and directories). On many types of file system implementations, the maximum number of inodes is fixed at filesystem creation, limiting the maximum number of files the filesystem can hold. It is possible for a device to run out of inodes. When this happens, new files cannot be created on the device, even though there may be free space available.'
+	},
+
+	'mysql.net': {
+		info: 'The amount of data sent to mysql clients (<strong>out</strong>) and received from mysql clients (<strong>in</strong>).'
+	},
+
+	// ------------------------------------------------------------------------
+	// MYSQL
+
+	'mysql.queries': {
+		info: 'The number of statements executed by the server.<ul>' +
+		'<li><strong>queries</strong> counts the statements executed within stored SQL programs.</li>' +
+		'<li><strong>questions</strong> counts the statements sent to the mysql server by mysql clients.</li>' +
+		'<li><strong>slow queries</strong> counts the number of statements that took more than <a href="http://dev.mysql.com/doc/refman/5.7/en/server-system-variables.html#sysvar_long_query_time" target="_blank">long_query_time</a> seconds to be executed.' +
+		' For more information about slow queries check the mysql <a href="http://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html" target="_blank">slow query log</a>.</li>' +
+		'</ul>'
+	},
+
+	'mysql.handlers': {
+		info: 'Usage of the internal handlers of mysql. This chart provides very good insights of what the mysql server is actually doing.' +
+		' (if the chart is not showing all these dimensions it is because they are zero - set <strong>Which dimensions to show?</strong> to <strong>All</strong> from the dashboard settings, to render even the zero values)<ul>' +
+		'<li><strong>commit</strong>, the number of internal <a href="http://dev.mysql.com/doc/refman/5.7/en/commit.html" target="_blank">COMMIT</a> statements.</li>' +
+		'<li><strong>delete</strong>, the number of times that rows have been deleted from tables.</li>' +
+		'<li><strong>prepare</strong>, a counter for the prepare phase of two-phase commit operations.</li>' +
+		'<li><strong>read first</strong>, the number of times the first entry in an index was read. A high value suggests that the server is doing a lot of full index scans; e.g. <strong>SELECT col1 FROM foo</strong>, with col1 indexed.</li>' +
+		'<li><strong>read key</strong>, the number of requests to read a row based on a key. If this value is high, it is a good indication that your tables are properly indexed for your queries.</li>' +
+		'<li><strong>read next</strong>, the number of requests to read the next row in key order. This value is incremented if you are querying an index column with a range constraint or if you are doing an index scan.</li>' +
+		'<li><strong>read prev</strong>, the number of requests to read the previous row in key order. This read method is mainly used to optimize <strong>ORDER BY ... DESC</strong>.</li>' +
+		'<li><strong>read rnd</strong>, the number of requests to read a row based on a fixed position. A high value indicates you are doing a lot of queries that require sorting of the result. You probably have a lot of queries that require MySQL to scan entire tables or you have joins that do not use keys properly.</li>' +
+		'<li><strong>read rnd next</strong>, the number of requests to read the next row in the data file. This value is high if you are doing a lot of table scans. Generally this suggests that your tables are not properly indexed or that your queries are not written to take advantage of the indexes you have.</li>' +
+		'<li><strong>rollback</strong>, the number of requests for a storage engine to perform a rollback operation.</li>' +
+		'<li><strong>savepoint</strong>, the number of requests for a storage engine to place a savepoint.</li>' +
+		'<li><strong>savepoint rollback</strong>, the number of requests for a storage engine to roll back to a savepoint.</li>' +
+		'<li><strong>update</strong>, the number of requests to update a row in a table.</li>' +
+		'<li><strong>write</strong>, the number of requests to insert a row in a table.</li>' +
+		'</ul>'
+	},
+
+	'mysql.table_locks': {
+		info: 'MySQL table locks counters: <ul>' +
+		'<li><strong>immediate</strong>, the number of times that a request for a table lock could be granted immediately.</li>' +
+		'<li><strong>waited</strong>, the number of times that a request for a table lock could not be granted immediately and a wait was needed. If this is high and you have performance problems, you should first optimize your queries, and then either split your table or tables or use replication.</li>' +
+		'</ul>'
+	},
+
+	// ------------------------------------------------------------------------
+	// APACHE
 
 	'apache.connections': {
 		colors: NETDATA.colors[4],
@@ -1061,7 +1730,7 @@ var chartData = {
 	'apache.requests': {
 		colors: NETDATA.colors[0],
 		mainheads: [
-			gaugeChart('Connections', '12%', '', NETDATA.colors[0])
+			gaugeChart('Requests', '12%', '', NETDATA.colors[0])
 		]
 	},
 
@@ -1107,6 +1776,10 @@ var chartData = {
 		height: 0.5
 	},
 
+
+	// ------------------------------------------------------------------------
+	// NGINX
+
 	'nginx.connections': {
 		colors: NETDATA.colors[4],
 		mainheads: [
@@ -1130,12 +1803,17 @@ function anyAttribute(obj, attr, key, def) {
 	return def;
 }
 
-function menuTitle(menu) {
-	return anyAttribute(menuData, 'title', menu, menu);
+function menuTitle(chart) {
+	if(typeof chart.menu_pattern !== 'undefined') {
+		return anyAttribute(menuData, 'title', chart.menu_pattern, chart.menu_pattern).toString()
+				+ ': ' + chart.type.slice(-(chart.type.length - chart.menu_pattern.length - 1)).toString();
+	}
+
+	return anyAttribute(menuData, 'title', chart.menu, chart.menu);
 }
 
 function menuInfo(menu) {
-	return anyAttribute(menuData, 'title', menu, null);
+	return anyAttribute(menuData, 'info', menu, null);
 }
 
 function menuHeight(menu, relative) {
@@ -1187,14 +1865,41 @@ function enrichChartData(chart) {
 			chart.menu = tmp;
 			break;
 
+		case 'apache':
+		case 'cgroup':
+		case 'exim':
+		case 'mysql':
+		case 'named':
+		case 'nginx':
+		case 'phpfpm':
+		case 'postfix':
+		case 'redis':
+		case 'squid':
+		case 'snmp':
+		case 'tomcat':
+			chart.menu = chart.type;
+			chart.menu_pattern = tmp;
+			break;
+
 		case 'tc':
 			chart.menu = tmp;
 
-			// find the interface name from the name
-			if(typeof options.submenu_names[chart.family] === 'undefined' || options.submenu_names[chart.family] === chart.family)
-				options.submenu_names[chart.family] = chart.name.split('.')[1].split('_')[0];
+			// find a name for this device from fireqos info
+			// we strip '_(in|out)' or '(in|out)_'
+			if(typeof options.submenu_names[chart.family] === 'undefined' || options.submenu_names[chart.family] === chart.family) {
+				var n = chart.name.split('.')[1];
+				if(n.endsWith('_in'))
+					options.submenu_names[chart.family] = n.slice(0, n.lastIndexOf('_in'));
+				else if(n.endsWith('_out'))
+					options.submenu_names[chart.family] = n.slice(0, n.lastIndexOf('_out'));
+				else if(n.startsWith('in_'))
+					options.submenu_names[chart.family] = n.slice(3, n.length);
+				else if(n.startsWith('out_'))
+					options.submenu_names[chart.family] = n.slice(4, n.length);
+			}
 
 			// increase the priority of IFB devices
+			// to have inbound appear before outbound
 			if(chart.id.match(/.*-ifb$/))
 				chart.priority--;
 
@@ -1212,11 +1917,11 @@ function enrichChartData(chart) {
 
 function name2id(s) {
 	return s
-		.replace(' ', '_')
-		.replace('(', '_')
-		.replace(')', '_')
-		.replace('.', '_')
-		.replace('/', '_');
+		.replace(/ /g, '_')
+		.replace(/\(/g, '_')
+		.replace(/\)/g, '_')
+		.replace(/\./g, '_')
+		.replace(/\//g, '_');
 }
 
 function headMain(charts, duration) {
@@ -1242,7 +1947,6 @@ function headMain(charts, duration) {
 		+ ' data-dimensions="in"'
 		+ ' data-chart-library="easypiechart"'
 		+ ' data-title="Disk Read"'
-		+ ' data-units="KB / s"'
 		+ ' data-width="10%"'
 		+ ' data-before="0"'
 		+ ' data-after="-' + duration.toString() + '"'
@@ -1253,7 +1957,6 @@ function headMain(charts, duration) {
 		+ ' data-dimensions="out"'
 		+ ' data-chart-library="easypiechart"'
 		+ ' data-title="Disk Write"'
-		+ ' data-units="KB / s"'
 		+ ' data-width="10%"'
 		+ ' data-before="0"'
 		+ ' data-after="-' + duration.toString() + '"'
@@ -1278,7 +1981,6 @@ function headMain(charts, duration) {
 		+ ' data-dimensions="received"'
 		+ ' data-chart-library="easypiechart"'
 		+ ' data-title="IPv4 Inbound"'
-		+ ' data-units="kbps"'
 		+ ' data-width="10%"'
 		+ ' data-before="0"'
 		+ ' data-after="-' + duration.toString() + '"'
@@ -1289,6 +1991,28 @@ function headMain(charts, duration) {
 		+ ' data-dimensions="sent"'
 		+ ' data-chart-library="easypiechart"'
 		+ ' data-title="IPv4 Outbound"'
+		+ ' data-width="10%"'
+		+ ' data-before="0"'
+		+ ' data-after="-' + duration.toString() + '"'
+		+ ' data-points="' + duration.toString() + '"'
+		+ ' role="application"></div>';
+	}
+	else if(typeof charts['system.ipv6'] !== 'undefined') {
+		head += '<div style="margin-right: 10px;" data-netdata="system.ipv6"'
+		+ ' data-dimensions="received"'
+		+ ' data-chart-library="easypiechart"'
+		+ ' data-title="IPv6 Inbound"'
+		+ ' data-units="kbps"'
+		+ ' data-width="10%"'
+		+ ' data-before="0"'
+		+ ' data-after="-' + duration.toString() + '"'
+		+ ' data-points="' + duration.toString() + '"'
+		+ ' role="application"></div>';
+
+		head += '<div style="margin-right: 10px;" data-netdata="system.ipv6"'
+		+ ' data-dimensions="sent"'
+		+ ' data-chart-library="easypiechart"'
+		+ ' data-title="IPv6 Outbound"'
 		+ ' data-units="kbps"'
 		+ ' data-width="10%"'
 		+ ' data-before="0"'
@@ -1348,8 +2072,9 @@ function renderPage(menus, data) {
 
 		// generate an entry at the main menu
 
-		sidebar += '<li class=""><a href="#' + menu + '">' + menus[menu].title + '</a><ul class="nav">';
-		html += '<div role="section"><div role="sectionhead"><h1 id="' + menu + '" role="heading">' + menus[menu].title + '</h1></div><div id="' + menu + '" role="document">';
+		var menuid = name2id(menu);
+		sidebar += '<li class=""><a href="#' + menuid + '" onClick="return scrollToId(\'' + menuid + '\');">' + menus[menu].title + '</a><ul class="nav">';
+		html += '<div role="section"><div role="sectionhead"><h1 id="' + menuid + '" role="heading">' + menus[menu].title + '</h1></div><div id="menu_' + menuid + '" role="document">';
 
 		if(menus[menu].info !== null)
 			html += menus[menu].info;
@@ -1357,7 +2082,7 @@ function renderPage(menus, data) {
 		// console.log(' >> ' + menu + ' (' + menus[menu].priority + '): ' + menus[menu].title);
 
 		var shtml = '';
-		var mhead = '<div style="width: 100%; text-align: center;">' + mainhead;
+		var mhead = '<div class="netdata-chart-row">' + mainhead;
 		mainhead = '';
 
 		// sort the submenus of this menu
@@ -1367,13 +2092,14 @@ function renderPage(menus, data) {
 			var submenu = sub[si++];
 
 			// generate an entry at the submenu
-			sidebar += '<li class><a href="#' + name2id(menu + '_' + submenu) + '">' + menus[menu].submenus[submenu].title + '</a></li>';
-			shtml += '<div class="netdata-group-container" id="submenu_' + name2id(menu + '_' + submenu) + '" style="display: inline-block; width: ' + pcent_width.toString() + '%"><h2 id="' + name2id(menu + '_' + submenu) + '" class="netdata-chart-alignment" role="heading">' + menus[menu].submenus[submenu].title + '</h2>';
+			var submenuid = name2id(menu + '_' + submenu);
+			sidebar += '<li class><a href="#' + submenuid + '" onClick="return scrollToId(\'' + submenuid + '\');">' + menus[menu].submenus[submenu].title + '</a></li>';
+			shtml += '<div class="netdata-group-container" id="submenu_' + submenuid + '" style="display: inline-block; width: ' + pcent_width.toString() + '%"><h2 id="' + submenuid + '" class="netdata-chart-alignment" role="heading">' + menus[menu].submenus[submenu].title + '</h2>';
 
 			if(menus[menu].submenus[submenu].info !== null)
 				shtml += '<div class="chart-message netdata-chart-alignment" role="document">' + menus[menu].submenus[submenu].info + '</div>';
 
-			var head = '<div style="width: 100%; text-align: center;">';
+			var head = '<div class="netdata-chart-row">';
 			var chtml = '';
 
 			// console.log('    \------- ' + submenu + ' (' + menus[menu].submenus[submenu].priority + '): ' + menus[menu].submenus[submenu].title);
@@ -1428,12 +2154,12 @@ function renderChartsAndMenu(data) {
 			menus[charts[c].menu] = {
 				priority: charts[c].priority,
 				submenus: {},
-				title: menuTitle(charts[c].menu),
+				title: menuTitle(charts[c]),
 				info: menuInfo(charts[c].menu),
 				height: menuHeight(charts[c].menu, options.chartsHeight)
 			};
 		}
-		
+
 		if(charts[c].priority < menus[charts[c].menu].priority)
 			menus[charts[c].menu].priority = charts[c].priority;
 
@@ -1447,7 +2173,7 @@ function renderChartsAndMenu(data) {
 				height: submenuHeight(charts[c].menu, charts[c].submenu, menus[charts[c].menu].height)
 			};
 		}
-		
+
 		if(charts[c].priority < menus[charts[c].menu].submenus[charts[c].submenu].priority)
 			menus[charts[c].menu].submenus[charts[c].submenu].priority = charts[c].priority;
 
@@ -1455,6 +2181,8 @@ function renderChartsAndMenu(data) {
 		menus[charts[c].menu].submenus[charts[c].submenu].charts.push(charts[c]);
 	}
 
+	// propagate the descriptive subname given to QoS
+	// to all the other submenus with the same name
 	for(var m in menus) {
 		for(var s in menus[m].submenus) {
 			// set the family using a name
@@ -1483,8 +2211,8 @@ function downloadAllCharts(netdata_url) {
 			options.hostname = data.hostname;
 			document.getElementById('hostname').innerHTML = options.hostname;
 			document.getElementById('hostname').href = NETDATA.serverDefault;
-			document.title = options.hostname + ' dashboard';
-			
+			document.title = options.hostname + ' netdata dashboard';
+
 			renderChartsAndMenu(data);
 
 			// prepare our DOM
@@ -1498,6 +2226,141 @@ function downloadAllCharts(netdata_url) {
 
 // ----------------------------------------------------------------------------
 
+function versionLog(msg) {
+	document.getElementById('versionCheckLog').innerHTML = msg;
+}
+
+function getNetdataVersion(callback) {
+	versionLog('Downloading installed version info from netdata...');
+
+	$.ajax({
+		url: 'version.txt',
+		async: true,
+		cache: false
+	})
+	.done(function(data) {
+		data = data.replace(/(\r\n|\n|\r| |\t)/gm,"");
+		if(data.length !== 40) {
+			versionLog('Received version string is invalid.');
+			callback(null);
+		}
+		else {
+			versionLog('Installed version of netdata is ' + data);
+			document.getElementById('netdataVersion').innerHTML = data;
+			callback(data);
+		}
+	})
+	.fail(function() {
+		versionLog('Failed to download installed version info from netdata!');
+		callback(null);
+	});
+}
+
+function getGithubLatestCommit(callback) {
+	versionLog('Downloading latest version info from github...');
+
+	$.ajax({
+		url: 'https://api.github.com/repos/firehol/netdata/commits',
+		async: true,
+		cache: false
+	})
+	.done(function(data) {
+		versionLog('Latest version info from github is ' + data[0].sha);
+		callback(data[0].sha);
+	})
+	.fail(function() {
+		versionLog('Failed to download installed version info from github!');
+		callback(null);
+	});
+}
+
+function checkForUpdate(callback) {
+	getNetdataVersion(function(sha1) {
+		if(sha1 === null) callback(null, null);
+
+		getGithubLatestCommit(function(sha2) {
+			callback(sha1, sha2);
+		});
+	});
+
+	return null;
+}
+
+var updateBlinkCounter = 0;
+function notifyForUpdate(force) {
+	versionLog('<p>checking for updates...</p>');
+
+	var now = new Date().getTime();
+
+	if(typeof force === 'undefined' || force !== true) {
+		var last = loadLocalStorage('last_update_check');
+
+		if(typeof last === 'string')
+			last = parseInt(last);
+		else
+			last = 0;
+
+		if(now - last < 3600000 * 8) {
+			// no need to check it - too soon
+			return;
+		}
+	}
+
+	checkForUpdate(function(sha1, sha2) {
+		var save = false;
+
+		if(sha1 === null) {
+			save = false;
+			versionLog('<p><big>Failed to get your netdata version!</big></p><p>You can always get the latest version of netdata from <a href="https://github.com/firehol/netdata" target="_blank">its github page</a>.</p>');
+		}
+		else if(sha2 === null) {
+			save = false;
+			versionLog('<p><big>Failed to get the latest version from github.</big></p><p>You can always get the latest version of netdata from <a href="https://github.com/firehol/netdata" target="_blank">its github page</a>.</p>');
+		}
+		else if(sha1 === sha2) {
+			save = true;
+			versionLog('<p><big>You already have the latest version of netdata!</big></p><p>No update yet?<br/>Probably, we need some motivation to keep going on!</p><p>If you haven\'t already, <a href="https://github.com/firehol/netdata" target="_blank">give netdata a <b>Star</b> at its github page</a>.</p>');
+		}
+		else {
+			save = true;
+			var compare = 'https://github.com/firehol/netdata/compare/' + sha1.toString() + '...' + sha2.toString();
+
+			versionLog('<p><big><strong>New version of netdata available!</strong></big></p><p>Latest version: ' + sha2.toString() + '</p><p><a href="' + compare + '" target="_blank">Click here for the changes log</a> since your installed version, and<br/><a href="https://github.com/firehol/netdata/wiki/Updating-Netdata" target="_blank">click here for directions on updating</a> your netdata installation.</p><p>We suggest to review the changes log for new features you may be interested, or important bug fixes you may need.<br/>Keeping your netdata updated, is generally a good idea.</p>');
+
+			function updateButtonBlink() {
+				updateBlinkCounter--;
+				if(updateBlinkCounter > 0)
+					$('#updateButton').fadeOut(500).fadeIn(500, updateButtonBlink);
+			}
+
+			if(updateBlinkCounter === 0) {
+				updateBlinkCounter = 300;
+				updateButtonBlink();
+			}
+		}
+
+		if(save)
+			saveLocalStorage('last_update_check', now.toString());
+	});
+}
+
+// ----------------------------------------------------------------------------
+
+function getUrlParameter(sParam) {
+    var sPageURL = decodeURIComponent(window.location.search.substring(1)),
+        sURLVariables = sPageURL.split('&'),
+        sParameterName,
+        i;
+
+    for (i = 0; i < sURLVariables.length; i++) {
+        sParameterName = sURLVariables[i].split('=');
+
+        if (sParameterName[0] === sParam) {
+            return sParameterName[1] === undefined ? true : sParameterName[1];
+        }
+    }
+}
+
 function finalizePage() {
 	// resize all charts - without starting the background thread
 	// this has to be done while NETDATA is paused
@@ -1505,23 +2368,161 @@ function finalizePage() {
 	// the Dom elements are initially zero-sized
 	NETDATA.parseDom();
 
+	var before = 0, after = 0, nowelcome = 0;
+	after = getUrlParameter('force_after_ms');
+	before = getUrlParameter('force_before_ms');
+	nowelcome = (getUrlParameter('nowelcome') === true)?true:false;
+
+	if(before > 0 && after > 0) {
+		nowelcome = true;
+		NETDATA.globalPanAndZoom.setMaster(NETDATA.options.targets[0], after, before);
+	}
+
+	// ------------------------------------------------------------------------
+	// https://github.com/viralpatel/jquery.shorten/blob/master/src/jquery.shorten.js
+	$.fn.shorten = function(settings) {
+		"use strict";
+
+		var config = {
+			showChars: 750,
+			minHideChars: 10,
+			ellipsesText: "...",
+			moreText: '<i class="fa fa-expand" aria-hidden="true"></i> show more information',
+			lessText: '<i class="fa fa-compress" aria-hidden="true"></i> show less information',
+			onLess: function() { NETDATA.onscroll(); },
+			onMore: function() { NETDATA.onscroll(); },
+			errMsg: null,
+			force: false
+		};
+
+		if (settings) {
+			$.extend(config, settings);
+		}
+
+		if ($(this).data('jquery.shorten') && !config.force) {
+			return false;
+		}
+		$(this).data('jquery.shorten', true);
+
+		$(document).off("click", '.morelink');
+
+		$(document).on({
+			click: function() {
+
+				var $this = $(this);
+				if ($this.hasClass('less')) {
+					$this.removeClass('less');
+					$this.html(config.moreText);
+					$this.parent().prev().animate({'height':'0'+'%'}, 0, function () { $this.parent().prev().prev().show(); }).hide(0, function() {
+						config.onLess();
+					});
+
+				} else {
+					$this.addClass('less');
+					$this.html(config.lessText);
+					$this.parent().prev().animate({'height':'100'+'%'}, 0, function () { $this.parent().prev().prev().hide(); }).show(0, function() {
+						config.onMore();
+					});
+				}
+				return false;
+			}
+		}, '.morelink');
+
+		return this.each(function() {
+			var $this = $(this);
+
+			var content = $this.html();
+			var contentlen = $this.text().length;
+			if (contentlen > config.showChars + config.minHideChars) {
+				var c = content.substr(0, config.showChars);
+				if (c.indexOf('<') >= 0) // If there's HTML don't want to cut it
+				{
+					var inTag = false; // I'm in a tag?
+					var bag = ''; // Put the characters to be shown here
+					var countChars = 0; // Current bag size
+					var openTags = []; // Stack for opened tags, so I can close them later
+					var tagName = null;
+
+					for (var i = 0, r = 0; r <= config.showChars; i++) {
+						if (content[i] == '<' && !inTag) {
+							inTag = true;
+
+							// This could be "tag" or "/tag"
+							tagName = content.substring(i + 1, content.indexOf('>', i));
+
+							// If its a closing tag
+							if (tagName[0] == '/') {
+
+
+								if (tagName != '/' + openTags[0]) {
+									config.errMsg = 'ERROR en HTML: the top of the stack should be the tag that closes';
+								} else {
+									openTags.shift(); // Pops the last tag from the open tag stack (the tag is closed in the retult HTML!)
+								}
+
+							} else {
+								// There are some nasty tags that don't have a close tag like <br/>
+								if (tagName.toLowerCase() != 'br') {
+									openTags.unshift(tagName); // Add to start the name of the tag that opens
+								}
+							}
+						}
+						if (inTag && content[i] == '>') {
+							inTag = false;
+						}
+
+						if (inTag) { bag += content.charAt(i); } // Add tag name chars to the result
+						else {
+							r++;
+							if (countChars <= config.showChars) {
+								bag += content.charAt(i); // Fix to ie 7 not allowing you to reference string characters using the []
+								countChars++;
+							} else // Now I have the characters needed
+							{
+								if (openTags.length > 0) // I have unclosed tags
+								{
+									//console.log('They were open tags');
+									//console.log(openTags);
+									for (j = 0; j < openTags.length; j++) {
+										//console.log('Cierro tag ' + openTags[j]);
+										bag += '</' + openTags[j] + '>'; // Close all tags that were opened
+
+										// You could shift the tag from the stack to check if you end with an empty stack, that means you have closed all open tags
+									}
+									break;
+								}
+							}
+						}
+					}
+					c = $('<div/>').html(bag + '<span class="ellip">' + config.ellipsesText + '</span>').html();
+				}else{
+					c+=config.ellipsesText;
+				}
+
+				var html = '<div class="shortcontent">' + c +
+						'</div><div class="allcontent">' + content +
+						'</div><span><a href="javascript://nop/" class="morelink">' + config.moreText + '</a></span>';
+
+				$this.html(html);
+				$this.find(".allcontent").hide(); // Hide all text
+				$('.shortcontent p:last', $this).css('margin-bottom', 0); //Remove bottom margin on last paragraph as it's likely shortened
+			}
+		});
+
+	};
+	$(".chart-message").shorten();
+	// ------------------------------------------------------------------------
+
 	// let it run (update the charts)
 	NETDATA.unpause();
 
 	// check if we have to jump to a specific section
-	var hash = location.hash.replace('#','');
-	if(hash != '') {
-		// Clear the hash in the URL
-		// location.hash = '';   // delete front "//" if you want to change the address bar
-		var offset = $(location.hash).offset();
-		if(typeof offset !== 'undefined')
-			$('html, body').animate({ scrollTop: offset.top }, 0);
-	}
+	scrollToId(location.hash.replace('#',''));
 
 	/* activate bootstrap sidebar (affix) */
 	$('#sidebar').affix({
 		offset: {
-			top: (document.location.hostname === demo_hostname)?150:0,
+			top: (isdemo())?150:0,
 			bottom: 0
 		}
 	});
@@ -1532,15 +2533,21 @@ function finalizePage() {
 	$('#sidebar').on('affixed.bs.affix', function() {
 		$(this).removeAttr('style');
 	});
-	
+
 	/* activate bootstrap scrollspy (needed for sidebar) */
 	$(document.body).scrollspy({
 		target: '#sidebar',
 		offset: $(window).height() / 3 // controls the diff of the <hX> element to the top, to select it
 	});
 
-	document.getElementById('footer').style.display = 'block';
+	// change the URL based on the current position of the screen
+	$('#sidebar').on('activate.bs.scrollspy', function (e) {
+		var el = $(e.target);
+		if(el.find('ul').size() == 0)
+			history.replaceState(null, document.title, el.find('a').attr('href'));
+	});
 
+	document.getElementById('footer').style.display = 'block';
 
 	var update_options_modal = function() {
 		// console.log('update_options_modal');
@@ -1554,6 +2561,12 @@ function finalizePage() {
 			}
 		}
 
+		var theme_sync_option = function(option) {
+			var self = $('#' + option);
+
+			self.bootstrapToggle(netdataTheme === 'slate'?'on':'off');
+		}
+
 		sync_option('eliminate_zero_dimensions');
 		sync_option('destroy_on_hide');
 		sync_option('parallel_refresher');
@@ -1563,6 +2576,8 @@ function finalizePage() {
 		sync_option('stop_updates_when_focus_is_lost');
 		sync_option('smooth_plot');
 		sync_option('pan_and_zoom_data_padding');
+		sync_option('show_help');
+		theme_sync_option('netdata_theme_control');
 
 		if(NETDATA.getOption('parallel_refresher') === false) {
 			$('#concurrent_refreshes_row').hide();
@@ -1583,13 +2598,59 @@ function finalizePage() {
 	$('#stop_updates_when_focus_is_lost').change(function() { NETDATA.setOption('stop_updates_when_focus_is_lost', $(this).prop('checked')); });
 	$('#smooth_plot').change(function()                     { NETDATA.setOption('smooth_plot', $(this).prop('checked')); });
 	$('#pan_and_zoom_data_padding').change(function()       { NETDATA.setOption('pan_and_zoom_data_padding', $(this).prop('checked')); });
-	
-	if(document.location.hostname === demo_hostname)
+	$('#show_help').change(function()                       { NETDATA.setOption('show_help', $(this).prop('checked')); location.reload(); });
+
+	// this has to be the last
+	// it reloads the page
+	$('#netdata_theme_control').change(function() {
+		if(setTheme($(this).prop('checked')?'slate':'white'))
+			location.reload();
+	});
+
+	$('#updateModal').on('shown.bs.modal', function() {
+		notifyForUpdate(true);
+	});
+
+	$('#deleteRegistryModal').on('hidden.bs.modal', function() {
+		deleteRegistryGuid = null;
+	});
+
+	if(isdemo()) {
+		if(!nowelcome) {
+			setTimeout(function() {
+				$('#welcomeModal').modal();
+			}, 1000);
+		}
+
+		// google analytics when this is used for the home page of the demo sites
+		// this does not run on user's installations
 		setTimeout(function() {
-			$('#welcomeModal').modal();
-		}, 1000);
+			(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+			(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+			m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+			})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+			ga('create', 'UA-64295674-3', 'auto');
+			ga('send', 'pageview');
+		}, 2000);
+	}
+	else notifyForUpdate();
+}
+
+function resetDashboardOptions() {
+	var help = NETDATA.options.current.show_help;
+
+	NETDATA.resetOptions();
+	if(setTheme('slate'))
+		location.reload();
+
+	if(help !== NETDATA.options.current.show_help)
+		location.reload();
 }
 
 downloadAllCharts();
 
 </script>
+
+</body>
+</html>

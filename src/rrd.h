@@ -114,6 +114,9 @@ struct rrddim {
 													// instead of strcmp() every item in the binary index
 													// we first compare the hashes
 
+	// FIXME
+	// we need the hash_name too!
+
 	uint32_t flags;
 
 	char cache_filename[FILENAME_MAX+1];			// the filename we load/save from/to this set
@@ -246,7 +249,7 @@ struct rrdset {
 	// ------------------------------------------------------------------------
 	// the dimensions
 
-	avl_tree dimensions_index;						// the root of the dimensions index
+	avl_tree_lock dimensions_index;						// the root of the dimensions index
 	RRDDIM *dimensions;								// the actual data for every dimension
 };
 typedef struct rrdset RRDSET;
@@ -257,7 +260,7 @@ extern pthread_rwlock_t rrdset_root_rwlock;
 // ----------------------------------------------------------------------------
 // RRD SET functions
 
-extern char *rrdset_strncpy_name(char *to, const char *from, int length);
+extern char *rrdset_strncpyz_name(char *to, const char *from, size_t length);
 extern void rrdset_set_name(RRDSET *st, const char *name);
 
 extern char *rrdset_cache_dir(const char *id);

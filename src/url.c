@@ -27,24 +27,35 @@ char to_hex(char code) {
 /* Returns a url-encoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
 char *url_encode(char *str) {
-	char *pstr = str,
-		*buf = malloc(strlen(str) * 3 + 1),
-		*pbuf = buf;
+	char *buf, *pbuf;
 
-	while (*pstr) {
-		if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~')
-			*pbuf++ = *pstr;
+	pbuf = buf = malloc(strlen(str) * 3 + 1);
 
-		else if (*pstr == ' ')
+	if(!buf)
+		fatal("Cannot allocate memory.");
+
+	while (*str) {
+		if (isalnum(*str) || *str == '-' || *str == '_' || *str == '.' || *str == '~')
+			*pbuf++ = *str;
+
+		else if (*str == ' ')
 			*pbuf++ = '+';
 
 		else
-			*pbuf++ = '%', *pbuf++ = to_hex(*pstr >> 4), *pbuf++ = to_hex(*pstr & 15);
+			*pbuf++ = '%', *pbuf++ = to_hex(*str >> 4), *pbuf++ = to_hex(*str & 15);
 
-		pstr++;
+		str++;
 	}
-
 	*pbuf = '\0';
+
+	// FIX: I think this is prudent. URLs can be as long as 2 KiB or more.
+	//      We allocated 3 times more space to accomodate %NN encoding of
+	//      non ASCII chars. If URL has none of these kind of chars we will
+	//      end up with a big unused buffer.
+	//
+	//      Try to shrink the buffer...
+	if (!!(pbuf = (char *)realloc(buf, strlen(buf)+1)))
+		buf = pbuf;
 
 	return buf;
 }
@@ -52,30 +63,37 @@ char *url_encode(char *str) {
 /* Returns a url-decoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
 char *url_decode(char *str) {
-	char *pstr = str,
-		*buf = malloc(strlen(str) + 1),
-		*pbuf = buf;
+	size_t size = strlen(str) + 1;
 
-	if(!buf) fatal("Cannot allocate memory.");
+	char *buf = malloc(size);
+	if(!buf)
+		fatal("Cannot allocate %zu bytes of memory.", size);
 
-	while (*pstr) {
-		if (*pstr == '%') {
-			if (pstr[1] && pstr[2]) {
-				*pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
-				pstr += 2;
-			}
-		}
-		else if (*pstr == '+')
-			*pbuf++ = ' ';
-
-		else
-			*pbuf++ = *pstr;
-
-		pstr++;
-	}
-
-	*pbuf = '\0';
-
-	return buf;
+	return url_decode_r(buf, str, size);
 }
 
+char *url_decode_r(char *to, char *url, size_t size) {
+	char *s = url,           // source
+		 *d = to,            // destination
+		 *e = &to[size - 1]; // destination end
+
+	while(*s && d < e) {
+		if(unlikely(*s == '%')) {
+			if(likely(s[1] && s[2])) {
+				*d++ = from_hex(s[1]) << 4 | from_hex(s[2]);
+				s += 2;
+			}
+		}
+		else if(unlikely(*s == '+'))
+			*d++ = ' ';
+
+		else
+			*d++ = *s;
+
+		s++;
+	}
+
+	*d = '\0';
+
+	return to;
+}

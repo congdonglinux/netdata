@@ -17,9 +17,7 @@
 #include <config.h>
 #endif
 #include "avl.h"
-
-/* Private methods */
-int _avl_removeroot(avl_tree* t);
+#include "log.h"
 
 /* Swing to the left
  * Warning: no balance maintainance
@@ -68,7 +66,7 @@ void avl_nasty(avl* root) {
  * returns 1 if the depth of the tree has grown
  * Warning: do not insert elements already present
  */
-int _avl_insert(avl_tree* t, avl* a) {
+int avl_insert(avl_tree* t, avl* a) {
 	/* initialize */
 	a->left = 0;
 	a->right = 0;
@@ -85,7 +83,7 @@ int _avl_insert(avl_tree* t, avl* a) {
 			avl_tree left_subtree;
 			left_subtree.root = t->root->left;
 			left_subtree.compar = t->compar;
-			if (_avl_insert(&left_subtree, a)) {
+			if (avl_insert(&left_subtree, a)) {
 				switch (t->root->balance--) {
 				case 1:
 					return 0;
@@ -116,7 +114,7 @@ int _avl_insert(avl_tree* t, avl* a) {
 			avl_tree right_subtree;
 			right_subtree.root = t->root->right;
 			right_subtree.compar = t->compar;
-			if (_avl_insert(&right_subtree, a)) {
+			if (avl_insert(&right_subtree, a)) {
 				switch (t->root->balance++) {
 				case -1:
 					return 0;
@@ -143,32 +141,16 @@ int _avl_insert(avl_tree* t, avl* a) {
 		}
 	}
 }
-int avl_insert(avl_tree* t, avl* a) {
-#ifdef AVL_LOCK_WITH_MUTEX
-	pthread_mutex_lock(&t->mutex);
-#else
-	pthread_rwlock_wrlock(&t->rwlock);
-#endif
-
-	int ret = _avl_insert(t, a);
-
-#ifdef AVL_LOCK_WITH_MUTEX
-	pthread_mutex_unlock(&t->mutex);
-#else
-	pthread_rwlock_unlock(&t->rwlock);
-#endif
-	return ret;
-}
 
 /* Remove an element a from the AVL tree t
  * returns -1 if the depth of the tree has shrunk
  * Warning: if the element is not present in the tree,
  *          returns 0 as if it had been removed succesfully.
  */
-int _avl_remove(avl_tree* t, avl* a) {
+int avl_remove(avl_tree* t, avl* a) {
 	int b;
 	if (t->root == a)
-		return _avl_removeroot(t);
+		return avl_removeroot(t);
 	b = t->compar(t->root, a);
 	if (b >= 0) {
 		/* remove from the left subtree */
@@ -176,7 +158,7 @@ int _avl_remove(avl_tree* t, avl* a) {
 		avl_tree left_subtree;
 		if ((left_subtree.root = t->root->left)) {
 			left_subtree.compar = t->compar;
-			ch = _avl_remove(&left_subtree, a);
+			ch = avl_remove(&left_subtree, a);
 			t->root->left = left_subtree.root;
 			if (ch) {
 				switch (t->root->balance++) {
@@ -210,7 +192,7 @@ int _avl_remove(avl_tree* t, avl* a) {
 		avl_tree right_subtree;
 		if ((right_subtree.root = t->root->right)) {
 			right_subtree.compar = t->compar;
-			ch = _avl_remove(&right_subtree, a);
+			ch = avl_remove(&right_subtree, a);
 			t->root->right = right_subtree.root;
 			if (ch) {
 				switch (t->root->balance--) {
@@ -241,27 +223,10 @@ int _avl_remove(avl_tree* t, avl* a) {
 	return 0;
 }
 
-int avl_remove(avl_tree* t, avl* a) {
-#ifdef AVL_LOCK_WITH_MUTEX
-	pthread_mutex_lock(&t->mutex);
-#else
-	pthread_rwlock_wrlock(&t->rwlock);
-#endif
-
-	int ret = _avl_remove(t, a);
-
-#ifdef AVL_LOCK_WITH_MUTEX
-	pthread_mutex_unlock(&t->mutex);
-#else
-	pthread_rwlock_unlock(&t->rwlock);
-#endif
-	return ret;
-}
-
 /* Remove the root of the AVL tree t
  * Warning: dumps core if t is empty
  */
-int _avl_removeroot(avl_tree* t) {
+int avl_removeroot(avl_tree* t) {
 	int ch;
 	avl* a;
 	if (!t->root->left) {
@@ -287,7 +252,7 @@ int _avl_removeroot(avl_tree* t) {
 		while (a->left)
 			a = a->left;
 	}
-	ch = _avl_remove(t, a);
+	ch = avl_remove(t, a);
 	a->left = t->root->left;
 	a->right = t->root->right;
 	a->balance = t->root->balance;
@@ -297,29 +262,12 @@ int _avl_removeroot(avl_tree* t) {
 	return 0;
 }
 
-int avl_removeroot(avl_tree* t) {
-#ifdef AVL_LOCK_WITH_MUTEX
-	pthread_mutex_lock(&t->mutex);
-#else
-	pthread_rwlock_wrlock(&t->rwlock);
-#endif
-
-	int ret = _avl_removeroot(t);
-
-#ifdef AVL_LOCK_WITH_MUTEX
-	pthread_mutex_unlock(&t->mutex);
-#else
-	pthread_rwlock_unlock(&t->rwlock);
-#endif
-	return ret;
-}
-
 /* Iterate through elements in t from a range between a and b (inclusive)
  * for each element calls iter(a) until it returns 0
  * returns the last value returned by iterator or 0 if there were no calls
  * Warning: a<=b must hold
  */
-int _avl_range(avl_tree* t, avl* a, avl* b, int (*iter)(avl*), avl** ret) {
+int avl_range(avl_tree* t, avl* a, avl* b, int (*iter)(avl*), avl** ret) {
 	int x, c = 0;
 	if (!t->root)
 		return 0;
@@ -336,7 +284,7 @@ int _avl_range(avl_tree* t, avl* a, avl* b, int (*iter)(avl*), avl** ret) {
 		avl_tree left_subtree;
 		if ((left_subtree.root = t->root->left)) {
 			left_subtree.compar = t->compar;
-			if (!(c = _avl_range(&left_subtree, a, b, iter, ret)))
+			if (!(c = avl_range(&left_subtree, a, b, iter, ret)))
 				if (x > 0)
 					return 0;
 		}
@@ -353,7 +301,7 @@ int _avl_range(avl_tree* t, avl* a, avl* b, int (*iter)(avl*), avl** ret) {
 		avl_tree right_subtree;
 		if ((right_subtree.root = t->root->right)) {
 			right_subtree.compar = t->compar;
-			if (!(c = _avl_range(&right_subtree, a, b, iter, ret)))
+			if (!(c = avl_range(&right_subtree, a, b, iter, ret)))
 				if (x < 0)
 					return 0;
 		}
@@ -361,38 +309,117 @@ int _avl_range(avl_tree* t, avl* a, avl* b, int (*iter)(avl*), avl** ret) {
 	return c;
 }
 
-int avl_range(avl_tree* t, avl* a, avl* b, int (*iter)(avl*), avl** ret) {
+/* high performance searching - by ktsaou */
+avl *avl_search(avl_tree *t, avl *a) {
+	avl *root = t->root;
+
+	while(root) {
+		int x = t->compar(root, a);
+
+		if(x > 0) {
+			root = root->left;
+			continue;
+		}
+
+		if(x < 0) {
+			root = root->right;
+			continue;
+		}
+
+		return root;
+	}
+
+	return NULL;
+}
+
+void avl_init(avl_tree *t, int (*compar)(void *a, void *b)) {
+	t->root = NULL;
+	t->compar = compar;
+}
+
+/* ------------------------------------------------------------------------- */
+
+void avl_read_lock(avl_tree_lock *t) {
+#ifndef AVL_WITHOUT_PTHREADS
+#ifdef AVL_LOCK_WITH_MUTEX
+	pthread_mutex_lock(&t->mutex);
+#else
+	pthread_rwlock_rdlock(&t->rwlock);
+#endif
+#endif /* AVL_WITHOUT_PTHREADS */
+}
+
+void avl_write_lock(avl_tree_lock *t) {
+#ifndef AVL_WITHOUT_PTHREADS
 #ifdef AVL_LOCK_WITH_MUTEX
 	pthread_mutex_lock(&t->mutex);
 #else
 	pthread_rwlock_wrlock(&t->rwlock);
 #endif
+#endif /* AVL_WITHOUT_PTHREADS */
+}
 
-	int ret2 = _avl_range(t, a, b, iter, ret);
-
+void avl_unlock(avl_tree_lock *t) {
+#ifndef AVL_WITHOUT_PTHREADS
 #ifdef AVL_LOCK_WITH_MUTEX
 	pthread_mutex_unlock(&t->mutex);
 #else
 	pthread_rwlock_unlock(&t->rwlock);
 #endif
+#endif /* AVL_WITHOUT_PTHREADS */
+}
 
+/* ------------------------------------------------------------------------- */
+
+void avl_init_lock(avl_tree_lock *t, int (*compar)(void *a, void *b)) {
+	avl_init(&t->avl_tree, compar);
+
+#ifndef AVL_WITHOUT_PTHREADS
+	int lock;
+
+#ifdef AVL_LOCK_WITH_MUTEX
+	lock = pthread_mutex_init(&t->mutex, NULL);
+#else
+	lock = pthread_rwlock_init(&t->rwlock, NULL);
+#endif
+
+	if(lock != 0)
+		fatal("Failed to initialize AVL mutex/rwlock, error: %d", lock);
+
+#endif /* AVL_WITHOUT_PTHREADS */
+}
+
+avl *avl_search_lock(avl_tree_lock *t, avl *a) {
+	avl_read_lock(t);
+	avl *ret = avl_search(&t->avl_tree, a);
+	avl_unlock(t);
+	return ret;
+}
+
+int avl_range_lock(avl_tree_lock *t, avl *a, avl *b, int (*iter)(avl *), avl **ret) {
+	avl_read_lock(t);
+	int ret2 = avl_range(&t->avl_tree, a, b, iter, ret);
+	avl_unlock(t);
 	return ret2;
 }
 
-/* Iterate through elements in t equal to a
- * for each element calls iter(a) until it returns 0
- * returns the last value returned by iterator or 0 if there were no calls
- */
-int avl_search(avl_tree* t, avl* a, int (*iter)(avl* a), avl** ret) {
-	return avl_range(t, a, a, iter, ret);
+int avl_removeroot_lock(avl_tree_lock *t) {
+	avl_write_lock(t);
+	int ret = avl_removeroot(&t->avl_tree);
+	avl_unlock(t);
+	return ret;
 }
 
-void avl_init(avl_tree* t, int (*compar)(void* a, void* b)) {
-	t->root = NULL;
-	t->compar = compar;
-#ifdef AVL_LOCK_WITH_MUTEX
-	pthread_mutex_init(&t->mutex, NULL);
-#else
-	pthread_rwlock_init(&t->rwlock, NULL);
-#endif
+int avl_remove_lock(avl_tree_lock *t, avl *a) {
+	avl_write_lock(t);
+	int ret = avl_remove(&t->avl_tree, a);
+	avl_unlock(t);
+	return ret;
+}
+
+int avl_insert_lock(avl_tree_lock *t, avl *a) {
+	avl_write_lock(t);
+	int ret = avl_insert(&t->avl_tree, a);
+	avl_unlock(t);
+	return ret;
 }

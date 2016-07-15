@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <pwd.h>
+#include <grp.h>
 #include <pthread.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -24,71 +25,34 @@
 #include "main.h"
 #include "daemon.h"
 
+char pidfile[FILENAME_MAX + 1] = "";
+
 void sig_handler(int signo)
 {
-	switch(signo) {
-		case SIGILL:
-		case SIGABRT:
-		case SIGFPE:
-		case SIGSEGV:
-		case SIGBUS:
-		case SIGSYS:
-		case SIGTRAP:
-		case SIGXCPU:
-		case SIGXFSZ:
-			infoerr("Death signaled exit (signal %d).", signo);
-			signal(signo, SIG_DFL);
-			break;
-
-		case SIGKILL:
-		case SIGTERM:
-		case SIGQUIT:
-		case SIGINT:
-		case SIGHUP:
-		case SIGUSR1:
-		case SIGUSR2:
-			infoerr("Signaled exit (signal %d).", signo);
-			signal(SIGPIPE, SIG_IGN);
-			signal(SIGTERM, SIG_IGN);
-			signal(SIGQUIT, SIG_IGN);
-			signal(SIGHUP,  SIG_IGN);
-			signal(SIGINT,  SIG_IGN);
-			signal(SIGCHLD, SIG_IGN);
-			netdata_cleanup_and_exit(1);
-			break;
-
-		case SIGPIPE:
-			infoerr("Signaled PIPE (signal %d).", signo);
-			// this is received when web clients send a reset
-			// no need to log it.
-			// infoerr("Ignoring signal %d.", signo);
-			break;
-
-		default:
-			info("Signal %d received. Falling back to default action for it.", signo);
-			signal(signo, SIG_DFL);
-			break;
+	if(signo) {
+		error_log_limit_unlimited();
+		error("Received signal %d. Exiting...", signo);
+		netdata_exit = 1;
 	}
 }
 
-char rundir[FILENAME_MAX + 1] = "/var/run/netdata";
-char pidfile[FILENAME_MAX + 1] = "";
-void prepare_rundir() {
-	if(getuid() != 0) {
-		mkdir("/run/user", 0775);
-		snprintf(rundir, FILENAME_MAX, "/run/user/%d", getuid());
-		mkdir(rundir, 0775);
-		snprintf(rundir, FILENAME_MAX, "/run/user/%d/netdata", getuid());
+static void properly_chown_netdata_generated_file(int fd, uid_t uid, gid_t gid) {
+	if(fd == -1) return;
+
+	struct stat buf;
+
+	if(fstat(fd, &buf) == -1) {
+		error("Cannot fstat() fd %d", fd);
+		return;
 	}
 
-	snprintf(pidfile, FILENAME_MAX, "%s/netdata.pid", rundir);
-
-	if(mkdir(rundir, 0775) != 0) {
-		if(errno != EEXIST) error("Cannot create directory '%s'.", rundir);
+	if((buf.st_uid != uid || buf.st_gid != gid) && S_ISREG(buf.st_mode)) {
+		if(fchown(fd, uid, gid) == -1)
+			error("Cannot fchown() fd %d.", fd);
 	}
 }
 
-int become_user(const char *username)
+int become_user(const char *username, int access_fd, int output_fd, int error_fd, int pid_fd)
 {
 	struct passwd *pw = getpwnam(username);
 	if(!pw) {
@@ -96,35 +60,62 @@ int become_user(const char *username)
 		return -1;
 	}
 
-	if(chown(rundir, pw->pw_uid, pw->pw_gid) != 0) {
-		error("Cannot chown directory '%s' to user %s.", rundir, username);
+	uid_t uid = pw->pw_uid;
+	gid_t gid = pw->pw_gid;
+
+	int ngroups =  sysconf(_SC_NGROUPS_MAX);
+	gid_t *supplementary_groups = NULL;
+	if(ngroups) {
+		supplementary_groups = malloc(sizeof(gid_t) * ngroups);
+		if(supplementary_groups) {
+			if(getgrouplist(username, gid, supplementary_groups, &ngroups) == -1) {
+				error("Cannot get supplementary groups of user '%s'.", username);
+				free(supplementary_groups);
+				supplementary_groups = NULL;
+				ngroups = 0;
+			}
+		}
+		else fatal("Cannot allocate memory for %d supplementary groups", ngroups);
+	}
+
+	properly_chown_netdata_generated_file(access_fd, uid, gid);
+	properly_chown_netdata_generated_file(output_fd, uid, gid);
+	properly_chown_netdata_generated_file(error_fd, uid, gid);
+	properly_chown_netdata_generated_file(pid_fd, uid, gid);
+
+	if(supplementary_groups && ngroups) {
+		if(setgroups(ngroups, supplementary_groups) == -1)
+			error("Cannot set supplementary groups for user '%s'", username);
+
+		free(supplementary_groups);
+		supplementary_groups = NULL;
+		ngroups = 0;
+	}
+
+	if(setresgid(gid, gid, gid) != 0) {
+		error("Cannot switch to user's %s group (gid: %u).", username, gid);
 		return -1;
 	}
 
-	if(setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) != 0) {
-		error("Cannot switch to user's %s group (gid: %d).", username, pw->pw_gid);
+	if(setresuid(uid, uid, uid) != 0) {
+		error("Cannot switch to user %s (uid: %u).", username, uid);
 		return -1;
 	}
 
-	if(setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) != 0) {
-		error("Cannot switch to user %s (uid: %d).", username, pw->pw_uid);
+	if(setgid(gid) != 0) {
+		error("Cannot switch to user's %s group (gid: %u).", username, gid);
 		return -1;
 	}
-
-	if(setgid(pw->pw_gid) != 0) {
-		error("Cannot switch to user's %s group (gid: %d).", username, pw->pw_gid);
+	if(setegid(gid) != 0) {
+		error("Cannot effectively switch to user's %s group (gid: %u).", username, gid);
 		return -1;
 	}
-	if(setegid(pw->pw_gid) != 0) {
-		error("Cannot effectively switch to user's %s group (gid: %d).", username, pw->pw_gid);
+	if(setuid(uid) != 0) {
+		error("Cannot switch to user %s (uid: %u).", username, uid);
 		return -1;
 	}
-	if(setuid(pw->pw_uid) != 0) {
-		error("Cannot switch to user %s (uid: %d).", username, pw->pw_uid);
-		return -1;
-	}
-	if(seteuid(pw->pw_uid) != 0) {
-		error("Cannot effectively switch to user %s (uid: %d).", username, pw->pw_uid);
+	if(seteuid(uid) != 0) {
+		error("Cannot effectively switch to user %s (uid: %u).", username, uid);
 		return -1;
 	}
 
@@ -145,7 +136,7 @@ int become_daemon(int dont_fork, int close_all_files, const char *user, const ch
 		}
 	}
 
-	if(output && *output) {
+	if(output && *output && strcmp(output, "/dev/null") != 0) {
 		if((output_fd = open(output, O_RDWR | O_APPEND | O_CREAT, 0666)) == -1) {
 			error("Cannot open output log file '%s'", output);
 			if(input_fd != -1) close(input_fd);
@@ -153,7 +144,7 @@ int become_daemon(int dont_fork, int close_all_files, const char *user, const ch
 		}
 	}
 
-	if(error && *error) {
+	if(error && *error && strcmp(error, "/dev/null") != 0) {
 		if((error_fd = open(error, O_RDWR | O_APPEND | O_CREAT, 0666)) == -1) {
 			error("Cannot open error log file '%s'.", error);
 			if(input_fd != -1) close(input_fd);
@@ -162,7 +153,7 @@ int become_daemon(int dont_fork, int close_all_files, const char *user, const ch
 		}
 	}
 
-	if(access && *access && access_fd) {
+	if(access && *access && access_fd && strcmp(access, "/dev/null") != 0) {
 		if((*access_fd = open(access, O_RDWR | O_APPEND | O_CREAT, 0666)) == -1) {
 			error("Cannot open access log file '%s'", access);
 			if(input_fd != -1) close(input_fd);
@@ -182,6 +173,8 @@ int become_daemon(int dont_fork, int close_all_files, const char *user, const ch
 				*access_fd = -1;
 				return -1;
 			}
+			if(setvbuf(*access_fp, NULL, _IOLBF, 0) != 0)
+				error("Cannot set line buffering on access.log");
 		}
 	}
 
@@ -220,10 +213,6 @@ int become_daemon(int dont_fork, int close_all_files, const char *user, const ch
 			exit(2);
 		}
 	}
-
-	signal(SIGCHLD,  SIG_IGN);
-	signal(SIGHUP,   SIG_IGN);
-	signal(SIGWINCH, SIG_IGN);
 
 	// fork() again
 	if(!dont_fork) {
@@ -275,7 +264,11 @@ int become_daemon(int dont_fork, int close_all_files, const char *user, const ch
 			dup2(output_fd, STDOUT_FILENO);
 			close(output_fd);
 		}
-		output_fd = -1;
+
+		if(setvbuf(stdout, NULL, _IOLBF, 0) != 0)
+			error("Cannot set line buffering on debug.log");
+
+		output_fd = STDOUT_FILENO;
 	}
 	else dup2(dev_null, STDOUT_FILENO);
 
@@ -284,7 +277,11 @@ int become_daemon(int dont_fork, int close_all_files, const char *user, const ch
 			dup2(error_fd, STDERR_FILENO);
 			close(error_fd);
 		}
-		error_fd = -1;
+
+		if(setvbuf(stderr, NULL, _IOLBF, 0) != 0)
+			error("Cannot set line buffering on error.log");
+
+		error_fd = STDERR_FILENO;
 	}
 	else dup2(dev_null, STDERR_FILENO);
 
@@ -293,23 +290,32 @@ int become_daemon(int dont_fork, int close_all_files, const char *user, const ch
 		close(dev_null);
 
 	// generate our pid file
-	{
-		unlink(pidfile);
-		int fd = open(pidfile, O_RDWR | O_CREAT, 0666);
-		if(fd >= 0) {
+	int pidfd = -1;
+	if(pidfile[0]) {
+		pidfd = open(pidfile, O_RDWR | O_CREAT, 0644);
+		if(pidfd >= 0) {
+			if(ftruncate(pidfd, 0) != 0)
+				error("Cannot truncate pidfile '%s'.", pidfile);
+
 			char b[100];
 			sprintf(b, "%d\n", getpid());
-			ssize_t i = write(fd, b, strlen(b));
-			if(i <= 0) perror("Cannot write pid to file.");
-			close(fd);
+			ssize_t i = write(pidfd, b, strlen(b));
+			if(i <= 0)
+				error("Cannot write pidfile '%s'.", pidfile);
 		}
+		else error("Failed to open pidfile '%s'.", pidfile);
 	}
 
 	if(user && *user) {
-		if(become_user(user) != 0) {
+		if(become_user(user, (access_fd)?*access_fd:-1, output_fd, error_fd, pidfd) != 0) {
 			error("Cannot become user '%s'. Continuing as we are.", user);
 		}
 		else info("Successfully became user '%s'.", user);
+	}
+
+	if(pidfd != -1) {
+		close(pidfd);
+		pidfd = -1;
 	}
 
 	return(0);

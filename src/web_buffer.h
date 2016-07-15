@@ -48,7 +48,7 @@ extern const char *buffer_tostring(BUFFER *wb);
 
 #define buffer_need_bytes(buffer, needed_free_size) do { if(unlikely((buffer)->size - (buffer)->len < (size_t)(needed_free_size))) buffer_increase((buffer), (size_t)(needed_free_size)); } while(0)
 
-#define buffer_flush(wb) wb->buffer[wb->len = 0] = '\0'
+#define buffer_flush(wb) wb->buffer[(wb)->len = 0] = '\0'
 extern void buffer_reset(BUFFER *wb);
 
 extern void buffer_strcat(BUFFER *wb, const char *txt);
@@ -57,13 +57,13 @@ extern void buffer_rrd_value(BUFFER *wb, calculated_number value);
 extern void buffer_date(BUFFER *wb, int year, int month, int day, int hours, int minutes, int seconds);
 extern void buffer_jsdate(BUFFER *wb, int year, int month, int day, int hours, int minutes, int seconds);
 
-extern BUFFER *buffer_create(long size);
+extern BUFFER *buffer_create(size_t size);
 extern void buffer_free(BUFFER *b);
 extern void buffer_increase(BUFFER *b, size_t free_size_required);
 
-extern void buffer_snprintf(BUFFER *wb, size_t len, const char *fmt, ...);
+extern void buffer_snprintf(BUFFER *wb, size_t len, const char *fmt, ...) __attribute__ (( format (printf, 3, 4)));
 extern void buffer_vsprintf(BUFFER *wb, const char *fmt, va_list args);
-extern void buffer_sprintf(BUFFER *wb, const char *fmt, ...);
+extern void buffer_sprintf(BUFFER *wb, const char *fmt, ...) __attribute__ (( format (printf, 2, 3)));
 
 extern void buffer_char_replace(BUFFER *wb, char from, char to);
 

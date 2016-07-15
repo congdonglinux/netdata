@@ -21,20 +21,21 @@ EXTRA_DIST = \
 	autogen.sh \
 	README.md \
 	LICENSE.md \
+	COPYING \
 	autogen.sh \
-	netdata-9999.ebuild \
 	tests/stress.sh \
-	system/netdata-openrc \
-	system/netdata-systemd \
 	$(NULL)
 
 SUBDIRS = \
 	charts.d \
-	node.d \
 	conf.d \
+	node.d \
 	plugins.d \
+	python.d \
 	src \
+	system \
 	web \
+	contrib \
 	$(NULL)
 
 dist_noinst_DATA = netdata.spec

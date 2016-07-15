@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 
 #include "log.h"
 #include "common.h"
@@ -31,8 +32,8 @@ void rrd_stats_api_v1_chart(RRDSET *st, BUFFER *wb)
 		"\t\t\t\"data_url\": \"/api/v1/data?chart=%s\",\n"
 		"\t\t\t\"chart_type\": \"%s\",\n"
 		"\t\t\t\"duration\": %ld,\n"
-		"\t\t\t\"first_entry\": %lu,\n"
-		"\t\t\t\"last_entry\": %lu,\n"
+		"\t\t\t\"first_entry\": %ld,\n"
+		"\t\t\t\"last_entry\": %ld,\n"
 		"\t\t\t\"update_every\": %d,\n"
 		"\t\t\t\"dimensions\": {\n"
 		, st->id
@@ -131,12 +132,12 @@ unsigned long rrd_stats_one_json(RRDSET *st, char *options, BUFFER *wb)
 		"\t\t\t\"units\": \"%s\",\n"
 		"\t\t\t\"url\": \"/data/%s/%s\",\n"
 		"\t\t\t\"chart_type\": \"%s\",\n"
-		"\t\t\t\"counter\": %ld,\n"
+		"\t\t\t\"counter\": %lu,\n"
 		"\t\t\t\"entries\": %ld,\n"
-		"\t\t\t\"first_entry_t\": %lu,\n"
-		"\t\t\t\"last_entry\": %ld,\n"
-		"\t\t\t\"last_entry_t\": %lu,\n"
-		"\t\t\t\"last_entry_secs_ago\": %lu,\n"
+		"\t\t\t\"first_entry_t\": %ld,\n"
+		"\t\t\t\"last_entry\": %lu,\n"
+		"\t\t\t\"last_entry_t\": %ld,\n"
+		"\t\t\t\"last_entry_secs_ago\": %ld,\n"
 		"\t\t\t\"update_every\": %d,\n"
 		"\t\t\t\"isdetail\": %d,\n"
 		"\t\t\t\"usec_since_last_update\": %llu,\n"
@@ -183,7 +184,7 @@ unsigned long rrd_stats_one_json(RRDSET *st, char *options, BUFFER *wb)
 			"\t\t\t\t\t\"algorithm\": \"%s\",\n"
 			"\t\t\t\t\t\"multiplier\": %ld,\n"
 			"\t\t\t\t\t\"divisor\": %ld,\n"
-			"\t\t\t\t\t\"last_entry_t\": %lu,\n"
+			"\t\t\t\t\t\"last_entry_t\": %ld,\n"
 			"\t\t\t\t\t\"collected_value\": " COLLECTED_NUMBER_FORMAT ",\n"
 			"\t\t\t\t\t\"calculated_value\": " CALCULATED_NUMBER_FORMAT ",\n"
 			"\t\t\t\t\t\"last_collected_value\": " COLLECTED_NUMBER_FORMAT ",\n"
@@ -291,7 +292,7 @@ typedef struct rrdresult {
 	long c;					// current line ( -1 ~ n ), ( -1 = none, use rrdr_rows() to get number of rows )
 
 	long group;				// how many collected values were grouped for each row
-	long update_every;		// what is the suggested update frequency in seconds
+	int update_every;		// what is the suggested update frequency in seconds
 
 	calculated_number min;
 	calculated_number max;
@@ -373,12 +374,14 @@ void rrdr_disable_not_selected_dimensions(RRDR *r, const char *dims)
 	for(c = 0, d = r->st->dimensions; d ;c++, d = d->next)
 		r->od[c] |= RRDR_HIDDEN;
 
-	while(o && *o && (tok = mystrsep(&o, ", |"))) {
+	while(o && *o && (tok = mystrsep(&o, ",|"))) {
 		if(!*tok) continue;
+		
+		uint32_t hash = simple_hash(tok);
 
 		// find it and enable it
 		for(c = 0, d = r->st->dimensions; d ;c++, d = d->next) {
-			if(!strcmp(d->name, tok)) {
+			if(unlikely((hash == d->hash && !strcmp(d->id, tok)) || !strcmp(d->name, tok))) {
 				r->od[c] &= ~RRDR_HIDDEN;
 
 				// since the user needs this dimension
@@ -505,10 +508,10 @@ void rrdr_json_wrapper_begin(RRDR *r, BUFFER *wb, uint32_t format, uint32_t opti
 			, kq, kq, sq, r->st->name, sq
 			, kq, kq, r->update_every
 			, kq, kq, r->st->update_every
-			, kq, kq, rrdset_first_entry_t(r->st)
-			, kq, kq, rrdset_last_entry_t(r->st)
-			, kq, kq, r->before
-			, kq, kq, r->after
+			, kq, kq, (uint32_t)rrdset_first_entry_t(r->st)
+			, kq, kq, (uint32_t)rrdset_last_entry_t(r->st)
+			, kq, kq, (uint32_t)r->before
+			, kq, kq, (uint32_t)r->after
 			, kq, kq);
 
 	for(c = 0, i = 0, rd = r->st->dimensions; rd && c < r->d ;c++, rd = rd->next) {
@@ -603,8 +606,8 @@ void rrdr_json_wrapper_begin(RRDR *r, BUFFER *wb, uint32_t format, uint32_t opti
 	}
 
 	buffer_sprintf(wb, "],\n"
-			"	%sdimensions%s: %d,\n"
-			"	%spoints%s: %d,\n"
+			"	%sdimensions%s: %ld,\n"
+			"	%spoints%s: %ld,\n"
 			"	%sformat%s: %s"
 			, kq, kq, i
 			, kq, kq, rows
@@ -625,8 +628,7 @@ void rrdr_json_wrapper_begin(RRDR *r, BUFFER *wb, uint32_t format, uint32_t opti
 
 void rrdr_json_wrapper_end(RRDR *r, BUFFER *wb, uint32_t format, uint32_t options, int string_value)
 {
-	if(r) {;}
-	if(format) {;}
+	(void)format;
 
 	char kq[2] = "",					// key quote
 		sq[2] = "";						// string quote
@@ -681,20 +683,20 @@ static void rrdr2json(RRDR *r, BUFFER *wb, uint32_t options, int datatable)
 			sq[0] = '"';
 		}
 		row_annotations = 1;
-		snprintf(pre_date,   100, "		{%sc%s:[{%sv%s:%s", kq, kq, kq, kq, sq);
-		snprintf(post_date,  100, "%s}", sq);
-		snprintf(pre_label,  100, ",\n		{%sid%s:%s%s,%slabel%s:%s", kq, kq, sq, sq, kq, kq, sq);
-		snprintf(post_label, 100, "%s,%spattern%s:%s%s,%stype%s:%snumber%s}", sq, kq, kq, sq, sq, kq, kq, sq, sq);
-		snprintf(pre_value,  100, ",{%sv%s:", kq, kq);
-		snprintf(post_value, 100, "}");
-		snprintf(post_line,  100, "]}");
-		snprintf(data_begin, 100, "\n	],\n	%srows%s:\n	[\n", kq, kq);
-		snprintf(finish,     100, "\n	]\n}");
+		snprintfz(pre_date,   100, "		{%sc%s:[{%sv%s:%s", kq, kq, kq, kq, sq);
+		snprintfz(post_date,  100, "%s}", sq);
+		snprintfz(pre_label,  100, ",\n		{%sid%s:%s%s,%slabel%s:%s", kq, kq, sq, sq, kq, kq, sq);
+		snprintfz(post_label, 100, "%s,%spattern%s:%s%s,%stype%s:%snumber%s}", sq, kq, kq, sq, sq, kq, kq, sq, sq);
+		snprintfz(pre_value,  100, ",{%sv%s:", kq, kq);
+		strcpy(post_value,         "}");
+		strcpy(post_line,          "]}");
+		snprintfz(data_begin, 100, "\n	],\n	%srows%s:\n	[\n", kq, kq);
+		strcpy(finish,             "\n	]\n}");
 
-		snprintf(overflow_annotation, 200, ",{%sv%s:%sRESET OR OVERFLOW%s},{%sv%s:%sThe counters have been wrapped.%s}", kq, kq, sq, sq, kq, kq, sq, sq);
-		snprintf(normal_annotation,   200, ",{%sv%s:null},{%sv%s:null}", kq, kq, kq, kq);
+		snprintfz(overflow_annotation, 200, ",{%sv%s:%sRESET OR OVERFLOW%s},{%sv%s:%sThe counters have been wrapped.%s}", kq, kq, sq, sq, kq, kq, sq, sq);
+		snprintfz(normal_annotation,   200, ",{%sv%s:null},{%sv%s:null}", kq, kq, kq, kq);
 
-		buffer_sprintf(wb, "{\n	%scols%s:\n	[\n", kq, kq, kq, kq);
+		buffer_sprintf(wb, "{\n	%scols%s:\n	[\n", kq, kq);
 		buffer_sprintf(wb, "		{%sid%s:%s%s,%slabel%s:%stime%s,%spattern%s:%s%s,%stype%s:%sdatetime%s},\n", kq, kq, sq, sq, kq, kq, sq, sq, kq, kq, sq, sq, kq, kq, sq, sq);
 		buffer_sprintf(wb, "		{%sid%s:%s%s,%slabel%s:%s%s,%spattern%s:%s%s,%stype%s:%sstring%s,%sp%s:{%srole%s:%sannotation%s}},\n", kq, kq, sq, sq, kq, kq, sq, sq, kq, kq, sq, sq, kq, kq, sq, sq, kq, kq, kq, kq, sq, sq);
 		buffer_sprintf(wb, "		{%sid%s:%s%s,%slabel%s:%s%s,%spattern%s:%s%s,%stype%s:%sstring%s,%sp%s:{%srole%s:%sannotationText%s}}", kq, kq, sq, sq, kq, kq, sq, sq, kq, kq, sq, sq, kq, kq, sq, sq, kq, kq, kq, kq, sq, sq);
@@ -716,18 +718,18 @@ static void rrdr2json(RRDR *r, BUFFER *wb, uint32_t options, int datatable)
 			dates_with_new = 1;
 		}
 		if( options & RRDR_OPTION_OBJECTSROWS )
-			snprintf(pre_date,   100, "		{ ");
+			strcpy(pre_date, "		{ ");
 		else
-			snprintf(pre_date,   100, "		[ ");
-		snprintf(pre_label,  100, ", \"");
-		snprintf(post_label, 100, "\"");
-		snprintf(pre_value,  100, ", ");
+			strcpy(pre_date, "		[ ");
+		strcpy(pre_label,  ", \"");
+		strcpy(post_label, "\"");
+		strcpy(pre_value,  ", ");
 		if( options & RRDR_OPTION_OBJECTSROWS )
-			snprintf(post_line,  100, "}");
+			strcpy(post_line, "}");
 		else
-			snprintf(post_line,  100, "]");
-		snprintf(data_begin, 100, "],\n	%sdata%s:\n	[\n", kq, kq);
-		snprintf(finish,     100, "\n	]\n}");
+			strcpy(post_line, "]");
+		snprintfz(data_begin, 100, "],\n	%sdata%s:\n	[\n", kq, kq);
+		strcpy(finish,             "\n	]\n}");
 
 		buffer_sprintf(wb, "{\n	%slabels%s: [", kq, kq);
 		buffer_sprintf(wb, "%stime%s", sq, sq);
@@ -936,7 +938,7 @@ static void rrdr2csv(RRDR *r, BUFFER *wb, uint32_t options, const char *startlin
 			// generate the local date time
 			struct tm tmbuf, *tm = localtime_r(&now, &tmbuf);
 			if(!tm) { error("localtime() failed."); continue; }
-			buffer_date(wb, tm->tm_year + 1900, tm->tm_mon, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
+			buffer_date(wb, tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 		}
 
 		if(unlikely(options & RRDR_OPTION_PERCENTAGE)) {
@@ -984,11 +986,87 @@ static void rrdr2csv(RRDR *r, BUFFER *wb, uint32_t options, const char *startlin
 	//info("RRD2CSV(): %s: END", r->st->id);
 }
 
+inline static calculated_number rrdr2value(RRDR *r, long i, uint32_t options, int *all_values_are_null) {
+	long c;
+	RRDDIM *d;
+
+	calculated_number *cn = &r->v[ i * r->d ];
+	uint8_t *co = &r->o[ i * r->d ];
+
+	calculated_number sum = 0, min = 0, max = 0, v;
+	int all_null = 1, init = 1;
+
+	calculated_number total = 1;
+	if(unlikely(options & RRDR_OPTION_PERCENTAGE)) {
+		total = 0;
+		for(c = 0, d = r->st->dimensions; d && c < r->d ;c++, d = d->next) {
+			calculated_number n = cn[c];
+
+			if(likely((options & RRDR_OPTION_ABSOLUTE) && n < 0))
+				n = -n;
+
+			total += n;
+		}
+		// prevent a division by zero
+		if(total == 0) total = 1;
+	}
+
+	// for each dimension
+	for(c = 0, d = r->st->dimensions; d && c < r->d ;c++, d = d->next) {
+		if(unlikely(r->od[c] & RRDR_HIDDEN)) continue;
+		if(unlikely((options & RRDR_OPTION_NONZERO) && !(r->od[c] & RRDR_NONZERO))) continue;
+
+		calculated_number n = cn[c];
+
+		if(likely((options & RRDR_OPTION_ABSOLUTE) && n < 0))
+			n = -n;
+
+		if(unlikely(options & RRDR_OPTION_PERCENTAGE))
+			n = n * 100 / total;
+
+		if(unlikely(init)) {
+			if(n > 0) {
+				min = 0;
+				max = n;
+			}
+			else {
+				min = n;
+				max = 0;
+			}
+			init = 0;
+		}
+
+		if(likely(!(co[c] & RRDR_EMPTY))) {
+			all_null = 0;
+			sum += n;
+		}
+
+		if(n < min) min = n;
+		if(n > max) max = n;
+	}
+
+	if(unlikely(all_null)) {
+		if(likely(*all_values_are_null))
+			*all_values_are_null = 1;
+		return 0;
+	}
+	else {
+		if(likely(*all_values_are_null))
+			*all_values_are_null = 0;
+	}
+
+	if(options & RRDR_OPTION_MIN2MAX)
+		v = max - min;
+	else
+		v = sum;
+
+	return v;
+}
+
 static void rrdr2ssv(RRDR *r, BUFFER *wb, uint32_t options, const char *prefix, const char *separator, const char *suffix)
 {
 	//info("RRD2SSV(): %s: BEGIN", r->st->id);
-	long c, i;
-	RRDDIM *d;
+	long i;
 
 	buffer_strcat(wb, prefix);
 	long start = 0, end = rrdr_rows(r), step = 1;
@@ -999,89 +1077,30 @@ static void rrdr2ssv(RRDR *r, BUFFER *wb, uint32_t options, const char *prefix, 
 	}
 
 	// for each line in the array
-	calculated_number total = 1;
 	for(i = start; i != end ;i += step) {
+		int all_values_are_null = 0;
+		calculated_number v = rrdr2value(r, i, options, &all_values_are_null);
 
-		calculated_number *cn = &r->v[ i * r->d ];
-		uint8_t *co = &r->o[ i * r->d ];
-
-		calculated_number sum = 0, min = 0, max = 0, v;
-		int all_null = 1, init = 1;
-
-		if(unlikely(options & RRDR_OPTION_PERCENTAGE)) {
-			total = 0;
-			for(c = 0, d = r->st->dimensions; d && c < r->d ;c++, d = d->next) {
-				calculated_number n = cn[c];
-
-				if(likely((options & RRDR_OPTION_ABSOLUTE) && n < 0))
-					n = -n;
-
-				total += n;
-			}
-			// prevent a division by zero
-			if(total == 0) total = 1;
+		if(likely(i != start)) {
+			if(r->min > v) r->min = v;
+			if(r->max < v) r->max = v;
 		}
-
-		// for each dimension
-		for(c = 0, d = r->st->dimensions; d && c < r->d ;c++, d = d->next) {
-			if(unlikely(r->od[c] & RRDR_HIDDEN)) continue;
-			if(unlikely((options & RRDR_OPTION_NONZERO) && !(r->od[c] & RRDR_NONZERO))) continue;
-
-			calculated_number n = cn[c];
-
-			if(likely((options & RRDR_OPTION_ABSOLUTE) && n < 0))
-				n = -n;
-
-			if(unlikely(options & RRDR_OPTION_PERCENTAGE))
-				n = n * 100 / total;
-
-			if(unlikely(init)) {
-				if(n > 0) {
-					min = 0;
-					max = n;
-				}
-				else {
-					min = n;
-					max = 0;
-				}
-				init = 0;
-			}
-
-			if(likely(!(co[c] & RRDR_EMPTY))) {
-				all_null = 0;
-				sum += n;
-			}
-
-			if(n < min) min = n;
-			if(n > max) max = n;
+		else {
+			r->min = v;
+			r->max = v;
 		}
 
 		if(likely(i != start))
 			buffer_strcat(wb, separator);
 
-		if(all_null) {
+		if(all_values_are_null) {
 			if(options & RRDR_OPTION_NULL2ZERO)
 				buffer_strcat(wb, "0");
 			else
 				buffer_strcat(wb, "null");
 		}
-		else {
-			if(options & RRDR_OPTION_MIN2MAX)
-				v = max - min;
-			else
-				v = sum;
-
-			if(likely(i != start)) {
-				if(r->min > v) r->min = v;
-				if(r->max < v) r->max = v;
-			}
-			else {
-				r->min = v;
-				r->max = v;
-			}
-
+		else
 			buffer_rrd_value(wb, v);
-		}
 	}
 	buffer_strcat(wb, suffix);
 	//info("RRD2SSV(): %s: END", r->st->id);
@@ -1201,18 +1220,18 @@ static RRDR *rrdr_create(RRDSET *st, long n)
 	return r;
 
 cleanup:
-	error("Cannot allocate RRDR memory for %d entries", n);
+	error("Cannot allocate RRDR memory for %ld entries", n);
 	if(likely(r)) rrdr_free(r);
 	return NULL;
 }
 
-RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int group_method)
+RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int group_method, int aligned)
 {
 	int debug = st->debug;
 	int absolute_period_requested = -1;
 
 	time_t first_entry_t = rrdset_first_entry_t(st);
-	time_t last_entry_t = rrdset_last_entry_t(st);
+	time_t last_entry_t  = rrdset_last_entry_t(st);
 
 	if(before == 0 && after == 0) {
 		before = last_entry_t;
@@ -1221,13 +1240,14 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 	}
 
 	// allow relative for before and after
-	if(before <= st->update_every * st->entries) {
+	if(((before < 0)?-before:before) <= (st->update_every * st->entries)) {
 		before = last_entry_t + before;
 		absolute_period_requested = 0;
 	}
 
-	if(after <= st->update_every * st->entries) {
-		after = last_entry_t + after;
+	if(((after < 0)?-after:after) <= (st->update_every * st->entries)) {
+		if(after == 0) after = -st->update_every;
+		after = before + after;
 		absolute_period_requested = 0;
 	}
 
@@ -1235,10 +1255,10 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 		absolute_period_requested = 1;
 
 	// make sure they are within our timeframe
-	if(before > last_entry_t) before = last_entry_t;
+	if(before > last_entry_t)  before = last_entry_t;
 	if(before < first_entry_t) before = first_entry_t;
 
-	if(after > last_entry_t) after = last_entry_t;
+	if(after > last_entry_t)  after = last_entry_t;
 	if(after < first_entry_t) after = first_entry_t;
 
 	// check if they are upside down
@@ -1267,32 +1287,32 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 	// round group to the closest integer
 	if(available_points % points > points / 2) group++;
 
-	time_t after_new = after - (after % (group * st->update_every));
-	time_t before_new = before - (before % (group * st->update_every));
-	long points_new = (before_new - after_new) / st->update_every / group;
+	time_t after_new  = (aligned) ? (after  - (after  % (group * st->update_every))) : after;
+	time_t before_new = (aligned) ? (before - (before % (group * st->update_every))) : before;
+	long points_new   = (before_new - after_new) / st->update_every / group;
 
 	// find the starting and ending slots in our round robin db
 	long    start_at_slot = rrdset_time2slot(st, before_new),
-			stop_at_slot = rrdset_time2slot(st, after_new);
+			stop_at_slot  = rrdset_time2slot(st, after_new);
 
 #ifdef NETDATA_INTERNAL_CHECKS
 	if(after_new < first_entry_t) {
-		error("after_new %u is too small, minimum %u", after_new, first_entry_t);
+		error("after_new %u is too small, minimum %u", (uint32_t)after_new, (uint32_t)first_entry_t);
 	}
 	if(after_new > last_entry_t) {
-		error("after_new %u is too big, maximum %u", after_new, last_entry_t);
+		error("after_new %u is too big, maximum %u", (uint32_t)after_new, (uint32_t)last_entry_t);
 	}
 	if(before_new < first_entry_t) {
-		error("before_new %u is too small, minimum %u", before_new, first_entry_t);
+		error("before_new %u is too small, minimum %u", (uint32_t)before_new, (uint32_t)first_entry_t);
 	}
 	if(before_new > last_entry_t) {
-		error("before_new %u is too big, maximum %u", before_new, last_entry_t);
+		error("before_new %u is too big, maximum %u", (uint32_t)before_new, (uint32_t)last_entry_t);
 	}
 	if(start_at_slot < 0 || start_at_slot >= st->entries) {
-		error("start_at_slot is invalid %ld, expected %ld to %ld", start_at_slot, 0, st->entries - 1);
+		error("start_at_slot is invalid %ld, expected 0 to %ld", start_at_slot, st->entries - 1);
 	}
 	if(stop_at_slot < 0 || stop_at_slot >= st->entries) {
-		error("stop_at_slot is invalid %ld, expected %ld to %ld", stop_at_slot, 0, st->entries - 1);
+		error("stop_at_slot is invalid %ld, expected 0 to %ld", stop_at_slot, st->entries - 1);
 	}
 	if(points_new > (before_new - after_new) / group / st->update_every + 1) {
 		error("points_new %ld is more than points %ld", points_new, (before_new - after_new) / group / st->update_every + 1);
@@ -1321,13 +1341,13 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 	RRDR *r = rrdr_create(st, points);
 	if(!r) {
 #ifdef NETDATA_INTERNAL_CHECKS
-		error("Cannot create RRDR for %s, after=%u, before=%u, duration=%u, points=%d", st->id, after, before, duration, points);
+		error("Cannot create RRDR for %s, after=%u, before=%u, duration=%u, points=%ld", st->id, (uint32_t)after, (uint32_t)before, (uint32_t)duration, points);
 #endif
 		return NULL;
 	}
 	if(!r->d) {
 #ifdef NETDATA_INTERNAL_CHECKS
-		error("Returning empty RRDR (no dimensions in RRDSET) for %s, after=%u, before=%u, duration=%u, points=%d", st->id, after, before, duration, points);
+		error("Returning empty RRDR (no dimensions in RRDSET) for %s, after=%u, before=%u, duration=%u, points=%ld", st->id, (uint32_t)after, (uint32_t)before, (uint32_t)duration, points);
 #endif
 		return r;
 	}
@@ -1344,14 +1364,14 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 	// -------------------------------------------------------------------------
 	// checks for debugging
 
-	if(debug) debug(D_RRD_STATS, "INFO %s first_t: %lu, last_t: %lu, all_duration: %lu, after: %lu, before: %lu, duration: %lu, points: %ld, group: %ld"
+	if(debug) debug(D_RRD_STATS, "INFO %s first_t: %u, last_t: %u, all_duration: %u, after: %u, before: %u, duration: %u, points: %ld, group: %ld"
 			, st->id
-			, first_entry_t
-			, last_entry_t
-			, last_entry_t - first_entry_t
-			, after
-			, before
-			, duration
+			, (uint32_t)first_entry_t
+			, (uint32_t)last_entry_t
+			, (uint32_t)(last_entry_t - first_entry_t)
+			, (uint32_t)after
+			, (uint32_t)before
+			, (uint32_t)duration
 			, points
 			, group
 			);
@@ -1360,6 +1380,7 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 	// -------------------------------------------------------------------------
 	// temp arrays for keeping values per dimension
 
+	calculated_number 	last_values[dimensions]; // keep the last value of each dimension
 	calculated_number 	group_values[dimensions]; // keep sums when grouping
 	long 				group_counts[dimensions]; // keep the number of values added to group_values
 	uint8_t 			group_options[dimensions];
@@ -1370,6 +1391,7 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 	RRDDIM *rd;
 	long c;
 	for( rd = st->dimensions, c = 0 ; rd && c < dimensions ; rd = rd->next, c++) {
+		last_values[c] = 0;
 		group_values[c] = 0;
 		group_counts[c] = 0;
 		group_options[c] = 0;
@@ -1384,13 +1406,13 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 			dt = st->update_every,
 			group_start_t = 0;
 
-	if(unlikely(debug)) debug(D_RRD_STATS, "BEGIN %s after_t: %lu (stop_at_t: %ld), before_t: %lu (start_at_t: %ld), start_t(now): %lu, current_entry: %ld, entries: %ld"
+	if(unlikely(debug)) debug(D_RRD_STATS, "BEGIN %s after_t: %u (stop_at_t: %ld), before_t: %u (start_at_t: %ld), start_t(now): %u, current_entry: %ld, entries: %ld"
 			, st->id
-			, after
+			, (uint32_t)after
 			, stop_at_slot
-			, before
+			, (uint32_t)before
 			, start_at_slot
-			, now
+			, (uint32_t)now
 			, st->current_entry
 			, st->entries
 			);
@@ -1407,7 +1429,7 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 		if(unlikely(slot < 0)) slot = st->entries - 1;
 		if(unlikely(slot == stop_at_slot)) stop_now = counter;
 
-		if(unlikely(debug)) debug(D_RRD_STATS, "ROW %s slot: %ld, entries_counter: %ld, group_count: %ld, added: %ld, now: %lu, %s %s"
+		if(unlikely(debug)) debug(D_RRD_STATS, "ROW %s slot: %ld, entries_counter: %ld, group_count: %ld, added: %ld, now: %ld, %s %s"
 				, st->id
 				, slot
 				, counter
@@ -1450,7 +1472,7 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 
 			switch(group_method) {
 				case GROUP_MAX:
-					if(unlikely(abs(value) > abs(group_values[c])))
+					if(unlikely(fabsl(value) > fabsl(group_values[c])))
 						group_values[c] = value;
 					break;
 
@@ -1458,6 +1480,14 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 				case GROUP_SUM:
 				case GROUP_AVERAGE:
 					group_values[c] += value;
+					break;
+
+				case GROUP_INCREMENTAL_SUM:
+					if(unlikely(slot == start_at_slot))
+						last_values[c] = value;
+
+					group_values[c] += last_values[c] - value;
+					last_values[c] = value;
 					break;
 			}
 		}
@@ -1485,9 +1515,13 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 					co[c] |= RRDR_EMPTY;
 				}
 				else if(unlikely(group_method == GROUP_AVERAGE)) {
+					// GROUP_AVERAGE
 					cn[c] = group_values[c] / group_counts[c];
 				}
 				else {
+					// GROUP_SUM
+					// GROUP_MAX
+					// GROUP_INCREMENTAL_SUM
 					cn[c] = group_values[c];
 				}
 
@@ -1512,9 +1546,43 @@ RRDR *rrd2rrdr(RRDSET *st, long points, long long after, long long before, int g
 	return r;
 }
 
+int rrd2value(RRDSET *st, BUFFER *wb, calculated_number *n, BUFFER *dimensions, long points, long long after, long long before, int group_method, uint32_t options, time_t *latest_timestamp, int *value_is_null)
+{
+	RRDR *r = rrd2rrdr(st, points, after, before, group_method, !(options & RRDR_OPTION_NOT_ALIGNED));
+	if(!r) {
+		if(value_is_null) *value_is_null = 1;
+		return 500;
+	}
+
+	if(rrdr_rows(r) == 0) {
+		rrdr_free(r);
+		if(value_is_null) *value_is_null = 1;
+		return 400;
+	}
+
+	if(r->result_options & RRDR_RESULT_OPTION_RELATIVE)
+		wb->options |= WB_CONTENT_NO_CACHEABLE;
+	else if(r->result_options & RRDR_RESULT_OPTION_ABSOLUTE)
+		wb->options |= WB_CONTENT_CACHEABLE;
+
+	options = rrdr_check_options(r, options, (dimensions)?buffer_tostring(dimensions):NULL);
+
+	if(dimensions)
+		rrdr_disable_not_selected_dimensions(r, buffer_tostring(dimensions));
+
+	if(latest_timestamp)
+		*latest_timestamp = r->before;
+
+	long i = (options & RRDR_OPTION_REVERSED)?rrdr_rows(r) - 1:0;
+	*n = rrdr2value(r, i, options, value_is_null);
+
+	rrdr_free(r);
+	return 200;
+}
+
 int rrd2format(RRDSET *st, BUFFER *wb, BUFFER *dimensions, uint32_t format, long points, long long after, long long before, int group_method, uint32_t options, time_t *latest_timestamp)
 {
-	RRDR *r = rrd2rrdr(st, points, after, before, group_method);
+	RRDR *r = rrd2rrdr(st, points, after, before, group_method, !(options & RRDR_OPTION_NOT_ALIGNED));
 	if(!r) {
 		buffer_strcat(wb, "Cannot generate output with these parameters on this chart.");
 		return 500;
@@ -1742,19 +1810,19 @@ time_t rrd_stats_json(int type, RRDSET *st, BUFFER *wb, long points, long group,
 	// -------------------------------------------------------------------------
 	// prepare various strings, to speed up the loop
 
-	char overflow_annotation[201]; snprintf(overflow_annotation, 200, ",{%sv%s:%sRESET OR OVERFLOW%s},{%sv%s:%sThe counters have been wrapped.%s}", kq, kq, sq, sq, kq, kq, sq, sq);
-	char normal_annotation[201];   snprintf(normal_annotation,   200, ",{%sv%s:null},{%sv%s:null}", kq, kq, kq, kq);
-	char pre_date[51];             snprintf(pre_date,             50, "		{%sc%s:[{%sv%s:%s", kq, kq, kq, kq, sq);
-	char post_date[21];            snprintf(post_date,            20, "%s}", sq);
-	char pre_value[21];            snprintf(pre_value,            20, ",{%sv%s:", kq, kq);
-	char post_value[21];           snprintf(post_value,           20, "}");
+	char overflow_annotation[201]; snprintfz(overflow_annotation, 200, ",{%sv%s:%sRESET OR OVERFLOW%s},{%sv%s:%sThe counters have been wrapped.%s}", kq, kq, sq, sq, kq, kq, sq, sq);
+	char normal_annotation[201];   snprintfz(normal_annotation,   200, ",{%sv%s:null},{%sv%s:null}", kq, kq, kq, kq);
+	char pre_date[51];             snprintfz(pre_date,             50, "		{%sc%s:[{%sv%s:%s", kq, kq, kq, kq, sq);
+	char post_date[21];            snprintfz(post_date,            20, "%s}", sq);
+	char pre_value[21];            snprintfz(pre_value,            20, ",{%sv%s:", kq, kq);
+	char post_value[21];           strcpy(post_value,                  "}");
 
 
 	// -------------------------------------------------------------------------
 	// checks for debugging
 
 	if(st->debug) {
-		debug(D_RRD_STATS, "%s first_entry_t = %lu, last_entry_t = %lu, duration = %lu, after = %lu, before = %lu, duration = %lu, entries_to_show = %lu, group = %lu"
+		debug(D_RRD_STATS, "%s first_entry_t = %ld, last_entry_t = %ld, duration = %ld, after = %ld, before = %ld, duration = %ld, entries_to_show = %ld, group = %ld"
 			, st->id
 			, rrdset_first_entry_t(st)
 			, rrdset_last_entry_t(st)
@@ -1767,10 +1835,10 @@ time_t rrd_stats_json(int type, RRDSET *st, BUFFER *wb, long points, long group,
 			);
 
 		if(before < after)
-			debug(D_RRD_STATS, "WARNING: %s The newest value in the database (%lu) is earlier than the oldest (%lu)", st->name, before, after);
+			debug(D_RRD_STATS, "WARNING: %s The newest value in the database (%ld) is earlier than the oldest (%ld)", st->name, before, after);
 
 		if((before - after) > st->entries * st->update_every)
-			debug(D_RRD_STATS, "WARNING: %s The time difference between the oldest and the newest entries (%lu) is higher than the capacity of the database (%lu)", st->name, before - after, st->entries * st->update_every);
+			debug(D_RRD_STATS, "WARNING: %s The time difference between the oldest and the newest entries (%ld) is higher than the capacity of the database (%ld)", st->name, before - after, st->entries * st->update_every);
 	}
 
 
@@ -1846,15 +1914,15 @@ time_t rrd_stats_json(int type, RRDSET *st, BUFFER *wb, long points, long group,
 		long count = 0, printed = 0, group_count = 0;
 		last_timestamp = 0;
 
-		if(st->debug) debug(D_RRD_STATS, "%s: REQUEST after:%lu before:%lu, points:%d, group:%d, CHART cur:%ld first: %lu last:%lu, CALC start_t:%ld, stop_t:%ld"
+		if(st->debug) debug(D_RRD_STATS, "%s: REQUEST after:%u before:%u, points:%ld, group:%ld, CHART cur:%ld first: %u last:%u, CALC start_t:%ld, stop_t:%ld"
 					, st->id
-					, after
-					, before
+					, (uint32_t)after
+					, (uint32_t)before
 					, points
 					, group
 					, st->current_entry
-					, rrdset_first_entry_t(st)
-					, rrdset_last_entry_t(st)
+					, (uint32_t)rrdset_first_entry_t(st)
+					, (uint32_t)rrdset_last_entry_t(st)
 					, t
 					, stop_at_t
 					);
@@ -1866,7 +1934,7 @@ time_t rrd_stats_json(int type, RRDSET *st, BUFFER *wb, long points, long group,
 
 			int print_this = 0;
 
-			if(st->debug) debug(D_RRD_STATS, "%s t = %ld, count = %ld, group_count = %ld, printed = %ld, now = %lu, %s %s"
+			if(st->debug) debug(D_RRD_STATS, "%s t = %ld, count = %ld, group_count = %ld, printed = %ld, now = %ld, %s %s"
 					, st->id
 					, t
 					, count + 1
@@ -2002,7 +2070,7 @@ time_t rrd_stats_json(int type, RRDSET *st, BUFFER *wb, long points, long group,
 
 	} // max_loop
 
-	debug(D_RRD_STATS, "RRD_STATS_JSON: %s total %ld bytes", st->name, wb->len);
+	debug(D_RRD_STATS, "RRD_STATS_JSON: %s total %lu bytes", st->name, wb->len);
 
 	pthread_rwlock_unlock(&st->rwlock);
 	return last_timestamp;

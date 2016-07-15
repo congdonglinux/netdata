@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 	<title>NetData Dashboard</title>
+	<meta name="application-name" content="netdata">
 
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 	<meta charset="utf-8">
@@ -11,8 +12,16 @@
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 	<meta name="author" content="costa@tsaousis.gr">
 
+	<meta property="og:locale" content="en_US" />
+	<meta property="og:image" content="https://my-netdata.io/images/seo-performance-512.png"/>
+	<meta property="og:url" content="http://my-netdata.io/"/>
+	<meta property="og:type" content="website"/>
+	<meta property="og:site_name" content="netdata"/>
+	<meta property="og:title" content="netdata - real-time performance monitoring, done right!"/>
+	<meta property="og:description" content="Stunning real-time dashboards, blazingly fast and extremely interactive. Zero configuration, zero dependencies, zero maintenance." />
+
 	<script>var netdataTheme = 'slate';</script>
-	<script type="text/javascript" src="dashboard.js"></script>
+	<script type="text/javascript" src="http://my-netdata.io/dashboard.js?v40"></script>
 </head>
 <body>
 
@@ -55,8 +64,8 @@
 						data-gauge-max-value="32767"
 						data-width="45%"
 						data-after="-600"
-						data-points="40"
-						data-title="Updates Every 15&nbsp;Sec"
+						data-points="60"
+						data-title="Updates Every 10&nbsp;Sec"
 						data-units="important metric"
 						data-colors="#C55"
 						></div>
@@ -98,8 +107,8 @@
 						data-easypiechart-max-value="32767"
 						data-width="45%"
 						data-after="-600"
-						data-points="40"
-						data-title="Updates Every 15&nbsp;Sec&nbsp;(<a href='https://github.com/OpenTSDB/opentsdb.net/blob/gh-pages/docs/source/user_guide/utilities/tcollector.rst#collecting-lots-of-metrics-with-tcollector' target='_blank'>OpenTSDB</a>)"
+						data-points="60"
+						data-title="Updates Every 10&nbsp;Sec"
 						data-units="important metric"
 						data-colors="#C55"
 						></div>
@@ -110,7 +119,7 @@
 						data-width="45%"
 						data-after="-600"
 						data-points="2"
-						data-title="Updates Every 5&nbsp;Mins&nbsp;(your&nbsp;NMS)"
+						data-title="Updates Every 5&nbsp;Mins"
 						data-units="important metric"
 						data-colors="#C55"
 						></div>

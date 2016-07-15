@@ -27,9 +27,88 @@ int access_log_syslog = 1;
 int error_log_syslog = 1;
 int output_log_syslog = 1;	// debug log
 
+time_t error_log_throttle_period = 1200;
+unsigned long error_log_errors_per_period = 200;
+
+int error_log_limit(int reset) {
+	static time_t start = 0;
+	static unsigned long counter = 0, prevented = 0;
+
+	// do not throttle if the period is 0
+	if(error_log_throttle_period == 0)
+		return 0;
+
+	// prevent all logs if the errors per period is 0
+	if(error_log_errors_per_period == 0)
+		return 1;
+
+	time_t now = time(NULL);
+	if(!start) start = now;
+
+	if(reset) {
+		if(prevented) {
+			log_date(stderr);
+			fprintf(stderr, "%s: Resetting logging for process '%s' (prevented %lu logs in the last %ld seconds).\n"
+					, program_name
+			        , program_name
+					, prevented
+					, now - start
+			);
+		}
+
+		start = now;
+		counter = 0;
+		prevented = 0;
+	}
+
+	// detect if we log too much
+	counter++;
+
+	if(now - start > error_log_throttle_period) {
+		if(prevented) {
+			log_date(stderr);
+			fprintf(stderr, "%s: Resuming logging from process '%s' (prevented %lu logs in the last %ld seconds).\n"
+					, program_name
+			        , program_name
+					, prevented
+					, error_log_throttle_period
+			);
+		}
+
+		// restart the period accounting
+		start = now;
+		counter = 1;
+		prevented = 0;
+
+		// log this error
+		return 0;
+	}
+
+	if(counter > error_log_errors_per_period) {
+		if(!prevented) {
+			log_date(stderr);
+			fprintf(stderr, "%s: Too many logs (%lu logs in %ld seconds, threshold is set to %lu logs in %ld seconds). Preventing more logs from process '%s' for %ld seconds.\n"
+					, program_name
+			        , counter
+			        , now - start
+			        , error_log_errors_per_period
+			        , error_log_throttle_period
+			        , program_name
+					, start + error_log_throttle_period - now);
+		}
+
+		prevented++;
+
+		// prevent logging this error
+		return 1;
+	}
+
+	return 0;
+}
+
 void log_date(FILE *out)
 {
-		char outstr[200];
+		char outstr[24];
 		time_t t;
 		struct tm *tmp, tmbuf;
 
@@ -37,7 +116,7 @@ void log_date(FILE *out)
 		tmp = localtime_r(&t, &tmbuf);
 
 		if (tmp == NULL) return;
-		if (strftime(outstr, sizeof(outstr), "%y-%m-%d %H:%M:%S", tmp) == 0) return;
+		if (unlikely(strftime(outstr, sizeof(outstr), "%y-%m-%d %H:%M:%S", tmp) == 0)) return;
 
 		fprintf(out, "%s: ", outstr);
 }
@@ -48,10 +127,10 @@ void debug_int( const char *file, const char *function, const unsigned long line
 
 	log_date(stdout);
 	va_start( args, fmt );
-	fprintf(stdout, "DEBUG (%04lu@%-10.10s:%-15.15s): %s: ", line, file, function, program_name);
-	vfprintf( stdout, fmt, args );
+	printf("DEBUG (%04lu@%-10.10s:%-15.15s): %s: ", line, file, function, program_name);
+	vprintf(fmt, args);
 	va_end( args );
-	fprintf(stdout, "\n");
+	putchar('\n');
 
 	if(output_log_syslog) {
 		va_start( args, fmt );
@@ -64,6 +143,9 @@ void info_int( const char *file, const char *function, const unsigned long line,
 {
 	va_list args;
 
+	// prevent logging too much
+	if(error_log_limit(0)) return;
+
 	log_date(stderr);
 
 	va_start( args, fmt );
@@ -72,7 +154,7 @@ void info_int( const char *file, const char *function, const unsigned long line,
 	vfprintf( stderr, fmt, args );
 	va_end( args );
 
-	fprintf(stderr, "\n");
+	fputc('\n', stderr);
 
 	if(error_log_syslog) {
 		va_start( args, fmt );
@@ -85,6 +167,9 @@ void error_int( const char *prefix, const char *file, const char *function, cons
 {
 	va_list args;
 
+	// prevent logging too much
+	if(error_log_limit(0)) return;
+
 	log_date(stderr);
 
 	va_start( args, fmt );
@@ -94,12 +179,12 @@ void error_int( const char *prefix, const char *file, const char *function, cons
 	va_end( args );
 
 	if(errno) {
-		char buf[200];
-		char *s = strerror_r(errno, buf, 200);
-		fprintf(stderr, " (errno %d, %s)\n", errno, s);
+		char buf[1024];
+		fprintf(stderr, " (errno %d, %s)\n", errno, strerror_r(errno, buf, 1023));
 		errno = 0;
 	}
-	else fprintf(stderr, "\n");
+	else
+		fputc('\n', stderr);
 
 	if(error_log_syslog) {
 		va_start( args, fmt );
@@ -121,7 +206,7 @@ void fatal_int( const char *file, const char *function, const unsigned long line
 	va_end( args );
 
 	perror(" # ");
-	fprintf(stderr, "\n");
+	fputc('\n', stderr);
 
 	if(error_log_syslog) {
 		va_start( args, fmt );
@@ -129,7 +214,7 @@ void fatal_int( const char *file, const char *function, const unsigned long line
 		va_end( args );
 	}
 
-	exit(1);
+	netdata_cleanup_and_exit(1);
 }
 
 void log_access( const char *fmt, ... )
@@ -142,10 +227,7 @@ void log_access( const char *fmt, ... )
 		va_start( args, fmt );
 		vfprintf( stdaccess, fmt, args );
 		va_end( args );
-		fprintf( stdaccess, "\n");
-#ifdef NETDATA_INTERNAL_CHECKS
-		fflush( stdaccess );
-#endif
+		fputc('\n', stdaccess);
 	}
 
 	if(access_log_syslog) {

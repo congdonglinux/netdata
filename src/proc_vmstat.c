@@ -13,9 +13,6 @@
 #include "rrd.h"
 #include "plugin_proc.h"
 
-#define MAX_PROC_VMSTAT_LINE 4096
-#define MAX_PROC_VMSTAT_NAME 1024
-
 int do_proc_vmstat(int update_every, unsigned long long dt) {
 	static procfile *ff = NULL;
 	static int do_swapio = -1, do_io = -1, do_pgfaults = -1, gen_hashes = -1;
@@ -217,7 +214,7 @@ int do_proc_vmstat(int update_every, unsigned long long dt) {
 
 	if(!ff) {
 		char filename[FILENAME_MAX + 1];
-		snprintf(filename, FILENAME_MAX, "%s%s", global_host_prefix, "/proc/vmstat");
+		snprintfz(filename, FILENAME_MAX, "%s%s", global_host_prefix, "/proc/vmstat");
 		ff = procfile_open(config_get("plugin:proc:/proc/vmstat", "filename to monitor", filename), " \t:", PROCFILE_FLAG_DEFAULT);
 	}
 	if(!ff) return 1;
@@ -324,7 +321,7 @@ int do_proc_vmstat(int update_every, unsigned long long dt) {
 	for(l = 0; l < lines ;l++) {
 		words = procfile_linewords(ff, l);
 		if(words < 2) {
-			if(words) error("Cannot read /proc/vmstat line %d. Expected 2 params, read %d.", l, words);
+			if(words) error("Cannot read /proc/vmstat line %u. Expected 2 params, read %u.", l, words);
 			continue;
 		}
 

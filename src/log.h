@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <stdarg.h>
+#include <time.h>
+
+#include "main.h"
 
 #ifndef NETDATA_LOG_H
 #define NETDATA_LOG_H 1
@@ -24,6 +27,8 @@
 #define D_RRD_CALLS			0x00020000
 #define D_DICTIONARY		0x00040000
 #define D_MEMORY			0x00080000
+#define D_CGROUP            0x00100000
+#define D_REGISTRY			0x00200000
 
 //#define DEBUG (D_WEB_CLIENT_ACCESS|D_LISTENER|D_RRD_STATS)
 //#define DEBUG 0xffffffff
@@ -42,6 +47,13 @@ extern int access_log_syslog;
 extern int error_log_syslog;
 extern int output_log_syslog;
 
+extern time_t error_log_throttle_period;
+extern unsigned long error_log_errors_per_period;
+extern int error_log_limit(int reset);
+
+#define error_log_limit_reset() do { error_log_limit(1); } while(0)
+#define error_log_limit_unlimited() do { error_log_throttle_period = 0; } while(0)
+
 #define debug(type, args...) do { if(unlikely(!silent && (debug_flags & type))) debug_int(__FILE__, __FUNCTION__, __LINE__, ##args); } while(0)
 #define info(args...)    info_int(__FILE__, __FUNCTION__, __LINE__, ##args)
 #define infoerr(args...) error_int("INFO", __FILE__, __FUNCTION__, __LINE__, ##args)
@@ -49,10 +61,10 @@ extern int output_log_syslog;
 #define fatal(args...)   fatal_int(__FILE__, __FUNCTION__, __LINE__, ##args)
 
 extern void log_date(FILE *out);
-extern void debug_int( const char *file, const char *function, const unsigned long line, const char *fmt, ... );
-extern void info_int( const char *file, const char *function, const unsigned long line, const char *fmt, ... );
-extern void error_int( const char *prefix, const char *file, const char *function, const unsigned long line, const char *fmt, ... );
-extern void fatal_int( const char *file, const char *function, const unsigned long line, const char *fmt, ... ) __attribute__ ((noreturn));
-extern void log_access( const char *fmt, ... );
+extern void debug_int( const char *file, const char *function, const unsigned long line, const char *fmt, ... ) __attribute__ (( format (printf, 4, 5)));
+extern void info_int( const char *file, const char *function, const unsigned long line, const char *fmt, ... ) __attribute__ (( format (printf, 4, 5)));
+extern void error_int( const char *prefix, const char *file, const char *function, const unsigned long line, const char *fmt, ... ) __attribute__ (( format (printf, 5, 6)));
+extern void fatal_int( const char *file, const char *function, const unsigned long line, const char *fmt, ... ) __attribute__ ((noreturn, format (printf, 4, 5)));
+extern void log_access( const char *fmt, ... ) __attribute__ (( format (printf, 1, 2)));
 
 #endif /* NETDATA_LOG_H */

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 	<title>NetData Dashboard</title>
+	<meta name="application-name" content="netdata">
 
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 	<meta charset="utf-8">
@@ -10,6 +11,14 @@
 	<meta name="apple-mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 	<meta name="author" content="costa@tsaousis.gr">
+
+	<meta property="og:locale" content="en_US" />
+	<meta property="og:image" content="https://my-netdata.io/images/seo-performance-512.png"/>
+	<meta property="og:url" content="http://my-netdata.io/"/>
+	<meta property="og:type" content="website"/>
+	<meta property="og:site_name" content="netdata"/>
+	<meta property="og:title" content="netdata - real-time performance monitoring, done right!"/>
+	<meta property="og:description" content="Stunning real-time dashboards, blazingly fast and extremely interactive. Zero configuration, zero dependencies, zero maintenance." />
 </head>
 <body>
 
@@ -177,7 +186,7 @@ Sparklines using dygraphs
 		data-height="20"
 		data-after="-300"
 		></div>
-	are also possible! This 
+	are also possible! This
 	<div data-netdata="system.ipv4"
 		data-chart-library="dygraph"
 		data-dygraph-theme="sparkline"
@@ -646,5 +655,4 @@ So, to avoid flashing the charts, we destroy and re-create the charts on each up
 	<!-- <script> netdataServer = "http://box:19999"; </script> -->
 
 	<!-- load the dashboard manager - it will do the rest -->
-	<script type="text/javascript" src="dashboard.js"></script>
-
+	<script type="text/javascript" src="dashboard.js?v39"></script>
