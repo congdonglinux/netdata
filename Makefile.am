@@ -38,8 +38,16 @@ SUBDIRS = \
 	contrib \
 	$(NULL)
 
-dist_noinst_DATA = netdata.spec
+dist_noinst_DATA= \
+	configs.signatures \
+	Dockerfile \
+	netdata.spec \
+	$(NULL)
 
 # until integrated within build
 # should be proper init.d/openrc/systemd usable
-dist_noinst_SCRIPTS = netdata-installer.sh
+dist_noinst_SCRIPTS= \
+	ansible/netdata.yml \
+	docker-build.sh \
+	netdata-installer.sh \
+	$(NULL)

@@ -32,7 +32,9 @@ netdata_SOURCES = \
 	common.c common.h \
 	daemon.c daemon.h \
 	dictionary.c dictionary.h \
+	eval.c eval.h \
 	global_statistics.c global_statistics.h \
+	health.c health.h \
 	log.c log.h \
 	main.c main.h \
 	plugin_checks.c plugin_checks.h \
@@ -50,9 +52,11 @@ netdata_SOURCES = \
 	proc_net_dev.c \
 	proc_net_ip_vs_stats.c \
 	proc_net_netstat.c \
+	proc_net_rpc_nfs.c \
 	proc_net_rpc_nfsd.c \
 	proc_net_snmp.c \
 	proc_net_snmp6.c \
+	proc_net_softnet_stat.c \
 	proc_net_stat_conntrack.c \
 	proc_net_stat_synproxy.c \
 	proc_stat.c \
@@ -86,6 +90,7 @@ apps_plugin_SOURCES = \
 	common.c common.h \
 	log.c log.h \
 	procfile.c procfile.h \
+	web_buffer.c web_buffer.h \
 	$(NULL)
 
 install-data-hook:

@@ -1,12 +1,27 @@
 # -*- coding: utf-8 -*-
-# Description: prototypes for netdata python.d modules
+# Description: netdata python modules framework
 # Author: Pawel Krupa (paulfantom)
 
+# Remember:
+# ALL CODE NEEDS TO BE COMPATIBLE WITH Python > 2.7 and Python > 3.1
+# Follow PEP8 as much as it is possible
+# "check" and "create" CANNOT be blocking.
+# "update" CAN be blocking
+# "update" function needs to be fast, so follow:
+#   https://wiki.python.org/moin/PythonSpeed/PerformanceTips
+# basically:
+#  - use local variables wherever it is possible
+#  - avoid dots in expressions that are executed many times
+#  - use "join()" instead of "+"
+#  - use "import" only at the beginning
+#
+# using ".encode()" in one thread can block other threads as well (only in python2)
+
 import time
-import sys
+# import sys
 import os
 import socket
-import resource
+import select
 try:
     import urllib.request as urllib2
 except ImportError:
@@ -18,7 +33,8 @@ import threading
 import msg
 
 
-class BaseService(threading.Thread):
+# class BaseService(threading.Thread):
+class SimpleService(threading.Thread):
     """
     Prototype of Service class.
     Implemented basic functionality to run jobs by `python.d.plugin`
@@ -41,6 +57,10 @@ class BaseService(threading.Thread):
         self.chart_name = ""
         self._dimensions = []
         self._charts = []
+        self.__chart_set = False
+        self.__first_run = True
+        self.order = []
+        self.definitions = {}
         if configuration is None:
             self.error("BaseService: no configuration parameters supplied. Cannot create Service.")
             raise RuntimeError
@@ -48,6 +68,8 @@ class BaseService(threading.Thread):
             self._extract_base_config(configuration)
             self.timetable = {}
             self.create_timetable()
+
+    # --- BASIC SERVICE CONFIGURATION ---
 
     def _extract_base_config(self, config):
         """
@@ -58,13 +80,14 @@ class BaseService(threading.Thread):
                       'retries':0}
         :param config: dict
         """
+        pop = config.pop
         try:
-            self.override_name = config.pop('name')
+            self.override_name = pop('name')
         except KeyError:
             pass
-        self.update_every = int(config.pop('update_every'))
-        self.priority = int(config.pop('priority'))
-        self.retries = int(config.pop('retries'))
+        self.update_every = int(pop('update_every'))
+        self.priority = int(pop('priority'))
+        self.retries = int(pop('retries'))
         self.retries_left = self.retries
         self.configuration = config
 
@@ -85,6 +108,8 @@ class BaseService(threading.Thread):
                           'next': now - (now % freq) + freq,
                           'freq': freq}
 
+    # --- THREAD CONFIGURATION ---
+
     def _run_once(self):
         """
         Executes self.update(interval) and draws run time chart.
@@ -92,38 +117,36 @@ class BaseService(threading.Thread):
         :return: boolean
         """
         t_start = time.time()
+        timetable = self.timetable
+        chart_name = self.chart_name
         # check if it is time to execute job update() function
-        if self.timetable['next'] > t_start:
-            #msg.debug(self.chart_name + " will be run in " +
-            #          str(int((self.timetable['next'] - t_start) * 1000)) + " ms")
-            msg.debug(self.chart_name,"will be run in", str(int((self.timetable['next'] - t_start) * 1000)), "ms")
+        if timetable['next'] > t_start:
+            self.debug(chart_name, "will be run in", str(int((timetable['next'] - t_start) * 1000)), "ms")
             return True
 
-        since_last = int((t_start - self.timetable['last']) * 1000000)
-        #msg.debug(self.chart_name +
-        #          " ready to run, after " + str(int((t_start - self.timetable['last']) * 1000)) +
-        #          " ms (update_every: " + str(self.timetable['freq'] * 1000) +
-        #          " ms, latency: " + str(int((t_start - self.timetable['next']) * 1000)) + " ms)")
-        msg.debug(self.chart_name,
-                  "ready to run, after", str(int((t_start - self.timetable['last']) * 1000)),
-                  "ms (update_every:", str(self.timetable['freq'] * 1000),
-                  "ms, latency:", str(int((t_start - self.timetable['next']) * 1000)), "ms")
+        since_last = int((t_start - timetable['last']) * 1000000)
+        self.debug(chart_name,
+                   "ready to run, after", str(int((t_start - timetable['last']) * 1000)),
+                   "ms (update_every:", str(timetable['freq'] * 1000),
+                   "ms, latency:", str(int((t_start - timetable['next']) * 1000)), "ms")
+        if self.__first_run:
+            since_last = 0
         if not self.update(since_last):
+            self.error("update function failed.")
             return False
         t_end = time.time()
-        self.timetable['next'] = t_end - (t_end % self.timetable['freq']) + self.timetable['freq']
+        self.timetable['next'] = t_end - (t_end % timetable['freq']) + timetable['freq']
         # draw performance graph
         run_time = str(int((t_end - t_start) * 1000))
-        #run_time_chart = "BEGIN netdata.plugin_pythond_" + self.chart_name + " " + str(since_last) + '\n'
-        #run_time_chart += "SET run_time = " + run_time + '\n'
-        #run_time_chart += "END\n"
-        #sys.stdout.write(run_time_chart)
-        sys.stdout.write("BEGIN netdata.plugin_pythond_%s %s\nSET run_time = %s\nEND\n" % \
-                         (self.chart_name, str(since_last), run_time))
+        # noinspection SqlNoDataSourceInspection
+        print("BEGIN netdata.plugin_pythond_%s %s\nSET run_time = %s\nEND\n" %
+              (self.chart_name, str(since_last), run_time))
+        # sys.stdout.write("BEGIN netdata.plugin_pythond_%s %s\nSET run_time = %s\nEND\n" %
+        #                  (self.chart_name, str(since_last), run_time))
 
-        #msg.debug(self.chart_name + " updated in " + str(run_time) + " ms")
-        msg.debug(self.chart_name, "updated in", str(run_time), "ms")
+        self.debug(chart_name, "updated in", str(run_time), "ms")
         self.timetable['last'] = t_start
+        self.__first_run = False
         return True
 
     def run(self):
@@ -133,24 +156,32 @@ class BaseService(threading.Thread):
         :return: None
         """
         self.timetable['last'] = time.time()
-        while True:
+        while True:  # run forever, unless something is wrong
             try:
                 status = self._run_once()
             except Exception as e:
-                msg.error("Something wrong: " + str(e))
+                self.error("Something wrong: ", str(e))
                 return
-            if status:
+            if status:  # handle retries if update failed
                 time.sleep(self.timetable['next'] - time.time())
                 self.retries_left = self.retries
             else:
                 self.retries_left -= 1
                 if self.retries_left <= 0:
-                    msg.error("no more retries. Exiting")
+                    self.error("no more retries. Exiting")
                     return
                 else:
                     time.sleep(self.timetable['freq'])
 
-    def _format(self, *args):
+    # --- CHART ---
+
+    @staticmethod
+    def _format(*args):
+        """
+        Escape and convert passed arguments.
+        :param args: anything
+        :return: list
+        """
         params = []
         append = params.append
         for p in args:
@@ -167,28 +198,14 @@ class BaseService(threading.Thread):
     def _line(self, instruction, *params):
         """
         Converts *params to string and joins them with one space between every one.
+        Result is appended to self._data_stream
         :param params: str/int/float
         """
-        #self._data_stream += instruction
         tmp = list(map((lambda x: "''" if x is None or len(x) == 0 else x), params))
-
         self._data_stream += "%s %s\n" % (instruction, str(" ".join(tmp)))
 
-        # self.error(str(" ".join(tmp)))
-        # for p in params:
-        #     if p is None:
-        #         p = ""
-        #     else:
-        #         p = str(p)
-        #     if len(p) == 0:
-        #         p = "''"
-        #     if ' ' in p:
-        #         p = "'" + p + "'"
-        #     self._data_stream += " " + p
-        #self._data_stream += "\n"
-
     def chart(self, type_id, name="", title="", units="", family="",
-              category="", charttype="line", priority="", update_every=""):
+              category="", chart_type="line", priority="", update_every=""):
         """
         Defines a new chart.
         :param type_id: str
@@ -197,14 +214,13 @@ class BaseService(threading.Thread):
         :param units: str
         :param family: str
         :param category: str
-        :param charttype: str
+        :param chart_type: str
         :param priority: int/str
         :param update_every: int/str
         """
         self._charts.append(type_id)
-        #self._line("CHART", type_id, name, title, units, family, category, charttype, priority, update_every)
 
-        p = self._format(type_id, name, title, units, family, category, charttype, priority, update_every)
+        p = self._format(type_id, name, title, units, family, category, chart_type, priority, update_every)
         self._line("CHART", *p)
 
     def dimension(self, id, name=None, algorithm="absolute", multiplier=1, divisor=1, hidden=False):
@@ -236,10 +252,8 @@ class BaseService(threading.Thread):
         self._dimensions.append(str(id))
         if hidden:
             p = self._format(id, name, algorithm, multiplier, divisor, "hidden")
-            #self._line("DIMENSION", id, name, algorithm, str(multiplier), str(divisor), "hidden")
         else:
             p = self._format(id, name, algorithm, multiplier, divisor)
-            #self._line("DIMENSION", id, name, algorithm, str(multiplier), str(divisor))
 
         self._line("DIMENSION", *p)
 
@@ -275,20 +289,28 @@ class BaseService(threading.Thread):
         try:
             value = str(int(value))
         except TypeError:
-            self.error("cannot set non-numeric value:", value)
+            self.error("cannot set non-numeric value:", str(value))
             return False
         self._line("SET", id, "=", str(value))
+        self.__chart_set = True
         return True
 
     def end(self):
-        self._line("END")
+        if self.__chart_set:
+            self._line("END")
+            self.__chart_set = False
+        else:
+            pos = self._data_stream.rfind("BEGIN")
+            self._data_stream = self._data_stream[:pos]
 
     def commit(self):
         """
-        Upload new data to netdata
+        Upload new data to netdata.
         """
         print(self._data_stream)
         self._data_stream = ""
+
+    # --- ERROR HANDLING ---
 
     def error(self, *params):
         """
@@ -308,37 +330,7 @@ class BaseService(threading.Thread):
         """
         msg.info(self.chart_name, *params)
 
-    def check(self):
-        """
-        check() prototype
-        :return: boolean
-        """
-        msg.error("Service " + str(self.__module__) + "doesn't implement check() function")
-        return False
-
-    def create(self):
-        """
-        create() prototype
-        :return: boolean
-        """
-        msg.error("Service " + str(self.__module__) + "doesn't implement create() function?")
-        return False
-
-    def update(self, interval):
-        """
-        update() prototype
-        :param interval: int
-        :return: boolean
-        """
-        msg.error("Service " + str(self.__module__) + "doesn't implement update() function")
-        return False
-
-
-class SimpleService(BaseService):
-    def __init__(self, configuration=None, name=None):
-        self.order = []
-        self.definitions = {}
-        BaseService.__init__(self, configuration=configuration, name=name)
+    # --- MAIN METHODS ---
 
     def _get_data(self):
         """
@@ -349,9 +341,14 @@ class SimpleService(BaseService):
 
     def check(self):
         """
-        :return:
+        check() prototype
+        :return: boolean
         """
-        return True
+        self.debug("Module", str(self.__module__), "doesn't implement check() function. Using default.")
+        if self._get_data() is None or len(self._get_data()) == 0:
+            return False
+        else:
+            return True
 
     def create(self):
         """
@@ -383,6 +380,7 @@ class SimpleService(BaseService):
         """
         data = self._get_data()
         if data is None:
+            self.debug("_get_data() returned no data")
             return False
 
         updated = False
@@ -397,23 +395,54 @@ class SimpleService(BaseService):
                 self.end()
 
         self.commit()
+        if not updated:
+            self.error("no charts to update")
 
         return updated
 
 
 class UrlService(SimpleService):
+    # TODO add support for https connections
     def __init__(self, configuration=None, name=None):
         self.url = ""
         self.user = None
         self.password = None
+        self.proxies = {}
         SimpleService.__init__(self, configuration=configuration, name=name)
 
-    def __add_auth(self):
-        passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
-        passman.add_password(None, self.url, self.user, self.password)
-        authhandler = urllib2.HTTPBasicAuthHandler(passman)
-        opener = urllib2.build_opener(authhandler)
-        urllib2.install_opener(opener)
+    def __add_openers(self):
+        # TODO add error handling
+        self.opener = urllib2.build_opener()
+
+        # Proxy handling
+        # TODO currently self.proxies isn't parsed from configuration file
+        # if len(self.proxies) > 0:
+        #     for proxy in self.proxies:
+        #         url = proxy['url']
+        #         # TODO test this:
+        #         if "user" in proxy and "pass" in proxy:
+        #             if url.lower().startswith('https://'):
+        #                 url = 'https://' + proxy['user'] + ':' + proxy['pass'] + '@' + url[8:]
+        #             else:
+        #                 url = 'http://' + proxy['user'] + ':' + proxy['pass'] + '@' + url[7:]
+        #         # FIXME move proxy auth to sth like this:
+        #         #     passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
+        #         #     passman.add_password(None, url, proxy['user'], proxy['password'])
+        #         #     opener.add_handler(urllib2.HTTPBasicAuthHandler(passman))
+        #
+        #         if url.lower().startswith('https://'):
+        #             opener.add_handler(urllib2.ProxyHandler({'https': url}))
+        #         else:
+        #             opener.add_handler(urllib2.ProxyHandler({'https': url}))
+
+        # HTTP Basic Auth
+        if self.user is not None and self.password is not None:
+            passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
+            passman.add_password(None, self.url, self.user, self.password)
+            self.opener.add_handler(urllib2.HTTPBasicAuthHandler(passman))
+            self.debug("Enabling HTTP basic auth")
+
+        #urllib2.install_opener(opener)
 
     def _get_raw_data(self):
         """
@@ -422,15 +451,16 @@ class UrlService(SimpleService):
         """
         raw = None
         try:
-            f = urllib2.urlopen(self.url, timeout=self.update_every)
+            f = self.opener.open(self.url, timeout=self.update_every * 2)
+            # f = urllib2.urlopen(self.url, timeout=self.update_every * 2)
         except Exception as e:
-            msg.error(self.__module__, str(e))
+            self.error(str(e))
             return None
 
         try:
             raw = f.read().decode('utf-8')
         except Exception as e:
-            msg.error(self.__module__, str(e))
+            self.error(str(e))
         finally:
             f.close()
         return raw
@@ -458,82 +488,162 @@ class UrlService(SimpleService):
         except (KeyError, TypeError):
             pass
 
-        if self.user is not None and self.password is not None:
-            self.__add_auth()
+        self.__add_openers()
 
-        if self._get_data() is not None:
-            return True
-        else:
+        test = self._get_data()
+        if test is None or len(test) == 0:
             return False
+        else:
+            return True
 
 
 class SocketService(SimpleService):
     def __init__(self, configuration=None, name=None):
+        self._sock = None
+        self._keep_alive = False
         self.host = "localhost"
         self.port = None
-        self.sock = None
         self.unix_socket = None
         self.request = ""
+        self.__socket_config = None
         SimpleService.__init__(self, configuration=configuration, name=name)
+
+    def _connect(self):
+        """
+        Recreate socket and connect to it since sockets cannot be reused after closing
+        Available configurations are IPv6, IPv4 or UNIX socket
+        :return:
+        """
+        try:
+            if self.unix_socket is None:
+                if self.__socket_config is None:
+                    # establish ipv6 or ipv4 connection.
+                    for res in socket.getaddrinfo(self.host, self.port, socket.AF_UNSPEC, socket.SOCK_STREAM):
+                        try:
+                            # noinspection SpellCheckingInspection
+                            af, socktype, proto, canonname, sa = res
+                            self._sock = socket.socket(af, socktype, proto)
+                        except socket.error as e:
+                            self.debug("Cannot create socket:", str(e))
+                            self._sock = None
+                            continue
+                        try:
+                            self._sock.connect(sa)
+                        except socket.error as e:
+                            self.debug("Cannot connect to socket:", str(e))
+                            self._disconnect()
+                            continue
+                        self.__socket_config = res
+                        break
+                else:
+                    # connect to socket with previously established configuration
+                    try:
+                        af, socktype, proto, canonname, sa = self.__socket_config
+                        self._sock = socket.socket(af, socktype, proto)
+                        self._sock.connect(sa)
+                    except socket.error as e:
+                        self.debug("Cannot create or connect to socket:", str(e))
+                        self._disconnect()
+            else:
+                # connect to unix socket
+                try:
+                    self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+                    self._sock.connect(self.unix_socket)
+                except socket.error:
+                    self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    self._sock.connect(self.unix_socket)
+
+        except Exception as e:
+            self.error(str(e),
+                       "Cannot create socket with following configuration: host:", str(self.host),
+                       "port:", str(self.port),
+                       "socket:", str(self.unix_socket))
+            self._sock = None
+        self._sock.setblocking(0)
+
+    def _disconnect(self):
+        """
+        Close socket connection
+        :return:
+        """
+        try:
+            self._sock.shutdown(2)  # 0 - read, 1 - write, 2 - all
+            self._sock.close()
+        except Exception:
+            pass
+        self._sock = None
+
+    def _send(self):
+        """
+        Send request.
+        :return: boolean
+        """
+        # Send request if it is needed
+        if self.request != "".encode():
+            try:
+                self._sock.send(self.request)
+            except Exception as e:
+                self._disconnect()
+                self.error(str(e),
+                           "used configuration: host:", str(self.host),
+                           "port:", str(self.port),
+                           "socket:", str(self.unix_socket))
+                return False
+        return True
+
+    def _receive(self):
+        """
+        Receive data from socket
+        :return: str
+        """
+        data = ""
+        while True:
+            try:
+                ready_to_read, _, in_error = select.select([self._sock], [], [], 5)
+            except Exception as e:
+                self.debug("SELECT", str(e))
+                self._disconnect()
+                break
+            if len(ready_to_read) > 0:
+                buf = self._sock.recv(4096)
+                if len(buf) == 0 or buf is None:  # handle server disconnect
+                    break
+                data += buf.decode()
+                if self._check_raw_data(data):
+                    break
+            else:
+                self.error("Socket timed out.")
+                self._disconnect()
+                break
+
+        return data
 
     def _get_raw_data(self):
         """
         Get raw data with low-level "socket" module.
         :return: str
         """
-        if self.sock is None:
-            try:
-                if self.unix_socket is None:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    #sock.setsockopt(socket.SOL_SOCKET, socket.TCP_NODELAY, 1)
-                    #sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                    #sock.settimeout(self.update_every)
-                    sock.settimeout(0.5)
-                    sock.connect((self.host, self.port))
-                    sock.settimeout(0.5)  # Just to be sure
-                else:
-                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-                    #sock.settimeout(self.update_every)
-                    sock.settimeout(0.05)
-                    sock.connect(self.unix_socket)
-                    sock.settimeout(0.05)  # Just to be sure
+        if self._sock is None:
+            self._connect()
 
-            except Exception as e:
-                self.error(str(e))
-                self.sock = None
-                return None
-
-        if self.request != "".encode():
-            try:
-                sock.send(self.request)
-            except Exception:
-                try:
-                    sock.shutdown(1)
-                    sock.close()
-                except:
-                    pass
-                self.sock = None
-                return None
-
-        size = 2
-        try:
-            data = sock.recv(size).decode()
-        except Exception as e:
-            self.error(str(e))
-            sock.close()
+        # Send request if it is needed
+        if not self._send():
             return None
 
-        while True:
-            # implement something like TCP Window Scaling
-            if size < 4096:
-                size *= 2
-            buf = sock.recv(size)
-            data += buf.decode()
-            if len(buf) < size:
-                break
+        data = self._receive()
+
+        if not self._keep_alive:
+            self._disconnect()
 
         return data
+
+    def _check_raw_data(self, data):
+        """
+        Check if all data has been gathered from socket
+        :param data: str
+        :return: boolean
+        """
+        return True
 
     def _parse_config(self):
         """
@@ -547,20 +657,25 @@ class SocketService(SimpleService):
         try:
             self.unix_socket = str(self.configuration['socket'])
         except (KeyError, TypeError):
-            self.error("No unix socket specified. Trying TCP/IP socket.")
+            self.debug("No unix socket specified. Trying TCP/IP socket.")
+            self.unix_socket = None
             try:
                 self.host = str(self.configuration['host'])
             except (KeyError, TypeError):
-                self.error("No host specified. Using: '" + self.host + "'")
+                self.debug("No host specified. Using: '" + self.host + "'")
             try:
                 self.port = int(self.configuration['port'])
             except (KeyError, TypeError):
-                self.error("No port specified. Using: '" + str(self.port) + "'")
+                self.debug("No port specified. Using: '" + str(self.port) + "'")
         try:
             self.request = str(self.configuration['request'])
         except (KeyError, TypeError):
-            self.error("No request specified. Using: '" + str(self.request) + "'")
+            self.debug("No request specified. Using: '" + str(self.request) + "'")
         self.request = self.request.encode()
+
+    def check(self):
+        self._parse_config()
+        return SimpleService.check(self)
 
 
 class LogService(SimpleService):
@@ -579,20 +694,23 @@ class LogService(SimpleService):
         lines = []
         try:
             if os.path.getsize(self.log_path) < self._last_position:
-                self._last_position = 0
+                self._last_position = 0  # read from beginning if file has shrunk
             elif os.path.getsize(self.log_path) == self._last_position:
-                return None
+                self.debug("Log file hasn't changed. No new data.")
+                return []  # return empty list if nothing has changed
             with open(self.log_path, "r") as fp:
                 fp.seek(self._last_position)
                 for i, line in enumerate(fp):
                     lines.append(line)
                 self._last_position = fp.tell()
         except Exception as e:
-            self.error(self.__module__, str(e))
+            self.error(str(e))
 
         if len(lines) != 0:
             return lines
-        return None
+        else:
+            self.error("No data collected.")
+            return None
 
     def check(self):
         """
@@ -615,13 +733,14 @@ class LogService(SimpleService):
             return False
 
     def create(self):
+        # set cursor at last byte of log file
+        self._last_position = os.path.getsize(self.log_path)
         status = SimpleService.create(self)
-        self._last_position = 0
+        # self._last_position = 0
         return status
 
 
 class ExecutableService(SimpleService):
-    #command_whitelist = ['exim', 'postqueue']
     bad_substrings = ('&', '|', ';', '>', '<')
 
     def __init__(self, configuration=None, name=None):
@@ -636,13 +755,14 @@ class ExecutableService(SimpleService):
         try:
             p = Popen(self.command, stdout=PIPE, stderr=PIPE)
         except Exception as e:
-            self.error(self.__module__, str(e))
+            self.error("Executing command", self.command, "resulted in error:", str(e))
             return None
         data = []
         for line in p.stdout.readlines():
             data.append(str(line.decode()))
 
         if len(data) == 0:
+            self.error("No data collected.")
             return None
 
         return data
@@ -660,25 +780,21 @@ class ExecutableService(SimpleService):
             self.command = str(self.configuration['command'])
         except (KeyError, TypeError):
             self.error("No command specified. Using: '" + self.command + "'")
-        self.command = self.command.split(' ')
-        #if self.command[0] not in self.command_whitelist:
-        #    self.error("Command is not whitelisted.")
-        #    return False
+        command = self.command.split(' ')
 
-        for arg in self.command[1:]:
+        for arg in command[1:]:
             if any(st in arg for st in self.bad_substrings):
                 self.error("Bad command argument:" + " ".join(self.command[1:]))
                 return False
         # test command and search for it in /usr/sbin or /sbin when failed
-        base = self.command[0].split('/')[-1]
+        base = command[0].split('/')[-1]
         if self._get_raw_data() is None:
             for prefix in ['/sbin/', '/usr/sbin/']:
-                self.command[0] = prefix + base
-                if os.path.isfile(self.command[0]):
+                command[0] = prefix + base
+                if os.path.isfile(command[0]):
                     break
-                #if self._get_raw_data() is not None:
-                #    break
-
+        self.command = command
         if self._get_data() is None or len(self._get_data()) == 0:
+            self.error("Command", self.command, "returned no data")
             return False
         return True

@@ -7,7 +7,7 @@ from base import SocketService
 # default module values (can be overridden per job in `config`)
 #update_every = 2
 priority = 60000
-retries = 5
+retries = 60
 
 # default job configuration (overridden by python.d.plugin)
 # config = {'local': {
@@ -23,12 +23,12 @@ ORDER = ['operations', 'hit_rate', 'memory', 'keys', 'clients', 'slaves']
 
 CHARTS = {
     'operations': {
-        'options': [None, 'Operations', 'operations/s', 'Statistics', 'redis.statistics', 'line'],
+        'options': [None, 'Operations', 'operations/s', 'Statistics', 'redis.operations', 'line'],
         'lines': [
             ['instantaneous_ops_per_sec', 'operations', 'absolute']
         ]},
     'hit_rate': {
-        'options': [None, 'Hit rate', 'percent', 'Statistics', 'redis.statistics', 'line'],
+        'options': [None, 'Hit rate', 'percent', 'Statistics', 'redis.hit_rate', 'line'],
         'lines': [
             ['hit_rate', 'rate', 'absolute']
         ]},
@@ -50,7 +50,7 @@ CHARTS = {
             ['blocked_clients', 'blocked', 'absolute']
         ]},
     'slaves': {
-        'options': [None, 'Slaves', 'slaves', 'Replication', 'redis.replication', 'line'],
+        'options': [None, 'Slaves', 'slaves', 'Replication', 'redis.slaves', 'line'],
         'lines': [
             ['connected_slaves', 'connected', 'absolute']
         ]}
@@ -66,6 +66,8 @@ class Service(SocketService):
         self.unix_socket = None
         self.order = ORDER
         self.definitions = CHARTS
+        self._keep_alive = True
+        self.chart_name = ""
 
     def _get_data(self):
         """
@@ -75,6 +77,7 @@ class Service(SocketService):
         try:
             raw = self._get_raw_data().split("\n")
         except AttributeError:
+            self.error("no data received")
             return None
         data = {}
         for line in raw:
@@ -93,7 +96,29 @@ class Service(SocketService):
         except:
             data['hit_rate'] = 0
 
-        return data
+        if len(data) == 0:
+            self.error("received data doesn't have needed records")
+            return None
+        else:
+            return data
+
+    def _check_raw_data(self, data):
+        """
+        Check if all data has been gathered from socket.
+        Parse first line containing message length and check against received message
+        :param data: str
+        :return: boolean
+        """
+        length = len(data)
+        supposed = data.split('\n')[0][1:]
+        offset = len(supposed) + 4  # 1 dollar sing, 1 new line character + 1 ending sequence '\r\n'
+        supposed = int(supposed)
+        if length - offset >= supposed:
+            return True
+        else:
+            return False
+
+        return False
 
     def check(self):
         """
@@ -103,14 +128,13 @@ class Service(SocketService):
         self._parse_config()
         if self.name == "":
             self.name = "local"
-        self.chart_name += "_" + self.name
+            self.chart_name += "_" + self.name
         data = self._get_data()
         if data is None:
-            self.error("No data received")
             return False
 
         for name in data:
             if name.startswith('db'):
-                self.definitions['keys']['lines'].append([name.decode(), None, 'absolute'])
+                self.definitions['keys']['lines'].append([name, None, 'absolute'])
 
         return True

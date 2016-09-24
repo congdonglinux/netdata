@@ -24,7 +24,7 @@ except ImportError:
 # default module values (can be overridden per job in `config`)
 # update_every = 3
 priority = 90000
-retries = 7
+retries = 60
 
 # default configuration (overridden by python.d.plugin)
 # config = {
@@ -39,7 +39,7 @@ retries = 7
 #}
 
 # query executed on MySQL server
-QUERY = "SHOW GLOBAL STATUS"
+QUERY = "SHOW GLOBAL STATUS;"
 
 ORDER = ['net',
          'queries',
@@ -105,7 +105,7 @@ CHARTS = {
             ["Select_scan", "scan", "incremental"]
         ]},
     'sort_issues': {
-        'options': [None, 'mysql Sort Issues', 'issues/s', 'issues', 'mysql.sort.issues', 'line'],
+        'options': [None, 'mysql Sort Issues', 'issues/s', 'issues', 'mysql.sort_issues', 'line'],
         'lines': [
             ["Sort_merge_passes", "merge_passes", "incremental"],
             ["Sort_range", "range", "incremental"],
@@ -168,7 +168,7 @@ CHARTS = {
         'lines': [
             ["Innodb_log_waits", "waits", "incremental"],
             ["Innodb_log_write_requests", "write_requests", "incremental", -1, 1],
-            ["Innodb_log_writes", "incremental", -1, 1],
+            ["Innodb_log_writes", "writes", "incremental", -1, 1],
         ]},
     'innodb_os_log': {
         'options': [None, 'mysql InnoDB OS Log Operations', 'operations', 'innodb', 'mysql.innodb_os_log', 'line'],
@@ -208,8 +208,8 @@ CHARTS = {
     'innodb_buffer_pool_bytes': {
         'options': [None, 'mysql InnoDB Buffer Pool Bytes', 'MB', 'innodb', 'mysql.innodb_buffer_pool_bytes', 'area'],
         'lines': [
-            ["Innodb_buffer_pool_bytes_data", "data", "absolute"],
-            ["Innodb_buffer_pool_bytes_dirty", "dirty", "absolute", -1, 1]
+            ["Innodb_buffer_pool_bytes_data", "data", "absolute", 1, 1024 * 1024],
+            ["Innodb_buffer_pool_bytes_dirty", "dirty", "absolute", -1, 1024 * 1024]
         ]},
     'innodb_buffer_pool_read_ahead': {
         'options': [None, 'mysql InnoDB Buffer Pool Read Ahead', 'operations/s', 'innodb', 'mysql.innodb_buffer_pool_read_ahead', 'area'],
@@ -246,7 +246,7 @@ CHARTS = {
     'qcache_freemem': {
         'options': [None, 'mysql QCache Free Memory', 'MB', 'qcache', 'mysql.qcache_freemem', 'area'],
         'lines': [
-            ["Qcache_free_memory", "free", "absolute"]
+            ["Qcache_free_memory", "free", "absolute", 1, 1024 * 1024]
         ]},
     'qcache_memblocks': {
         'options': [None, 'mysql QCache Memory Blocks', 'blocks', 'qcache', 'mysql.qcache_memblocks', 'line'],
@@ -317,40 +317,33 @@ class Service(SimpleService):
         :param configuration: dict
         :return: dict
         """
+        parameters = {}
         if self.name is None:
             self.name = 'local'
-        if 'user' not in configuration:
-            self.configuration['user'] = 'root'
-        if 'pass' not in configuration:
-            self.configuration['pass'] = ''
+        if 'user' in configuration:
+            parameters['user'] = self.configuration['user']
+        if 'pass' in configuration:
+            parameters['passwd'] = self.configuration['pass']
         if 'my.cnf' in configuration:
-            self.configuration['socket'] = ''
-            self.configuration['host'] = ''
-            self.configuration['port'] = 0
+            parameters['read_default_file'] = self.configuration['my.cnf']
         elif 'socket' in configuration:
-            self.configuration['my.cnf'] = ''
-            self.configuration['host'] = ''
-            self.configuration['port'] = 0
+            parameters['unix_socket'] = self.configuration['socket']
         elif 'host' in configuration:
-            self.configuration['my.cnf'] = ''
-            self.configuration['socket'] = ''
+            parameters['host'] = self.configuration['host']
             if 'port' in configuration:
-                self.configuration['port'] = int(configuration['port'])
-            else:
-                self.configuration['port'] = 3306
+                parameters['port'] = int(self.configuration['port'])
+        self.connection_parameters = parameters
 
     def _connect(self):
         """
         Try to connect to MySQL server
         """
         try:
-            self.connection = MySQLdb.connect(user=self.configuration['user'],
-                                              passwd=self.configuration['pass'],
-                                              read_default_file=self.configuration['my.cnf'],
-                                              unix_socket=self.configuration['socket'],
-                                              host=self.configuration['host'],
-                                              port=self.configuration['port'],
-                                              connect_timeout=self.update_every)
+            self.connection = MySQLdb.connect(connect_timeout=self.update_every, **self.connection_parameters)
+        except MySQLdb.OperationalError as e:
+            self.error("Cannot establish connection to MySQL.")
+            self.debug(str(e))
+            raise RuntimeError
         except Exception as e:
             self.error("problem connecting to server:", e)
             raise RuntimeError
@@ -369,11 +362,18 @@ class Service(SimpleService):
             cursor = self.connection.cursor()
             cursor.execute(QUERY)
             raw_data = cursor.fetchall()
+        except MySQLdb.OperationalError as e:
+            self.debug("Reconnecting due to", str(e))
+            self._connect()
+            cursor = self.connection.cursor()
+            cursor.execute(QUERY)
+            raw_data = cursor.fetchall()
         except Exception as e:
             self.error("cannot execute query.", e)
             self.connection.close()
             self.connection = None
             return None
+
         data = dict(raw_data)
         try:
             data["Thread_cache_misses"] = int(data["Threads_created"] * 10000 / float(data["Connections"]))

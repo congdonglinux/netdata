@@ -7,19 +7,19 @@ from base import ExecutableService
 # default module values (can be overridden per job in `config`)
 # update_every = 2
 priority = 60000
-retries = 5
+retries = 60
 
 # charts order (can be overridden if you want less charts, or different order)
 ORDER = ['qemails', 'qsize']
 
 CHARTS = {
     'qemails': {
-        'options': [None, "Postfix Queue Emails", "emails", 'queue', 'postfix.queued.emails', 'line'],
+        'options': [None, "Postfix Queue Emails", "emails", 'queue', 'postfix.qemails', 'line'],
         'lines': [
             ['emails', None, 'absolute']
         ]},
     'qsize': {
-        'options': [None, "Postfix Queue Emails Size", "emails size in KB", 'queue', 'postfix.queued.size', 'area'],
+        'options': [None, "Postfix Queue Emails Size", "emails size in KB", 'queue', 'postfix.qsize', 'area'],
         'lines': [
             ["size", None, 'absolute']
         ]}

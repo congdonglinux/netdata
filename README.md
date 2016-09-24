@@ -1,5 +1,7 @@
 [![Build Status](https://travis-ci.org/firehol/netdata.svg?branch=master)](https://travis-ci.org/firehol/netdata)
 <a href="https://scan.coverity.com/projects/firehol-netdata"><img alt="Coverity Scan Build Status" src="https://scan.coverity.com/projects/9140/badge.svg"/></a>
+[![Docker Pulls](https://img.shields.io/docker/pulls/titpetric/netdata.svg)](https://hub.docker.com/r/titpetric/netdata/)
+
 [![User Base](https://registry.my-netdata.io/api/v1/badge.svg?chart=netdata.registry_entries&dimensions=persons&label=user%20base&units=null&value_color=blue&precision=0&v41)](https://registry.my-netdata.io/#netdata_registry)
 [![Monitored Servers](https://registry.my-netdata.io/api/v1/badge.svg?chart=netdata.registry_entries&dimensions=machines&label=servers%20monitored&units=null&value_color=orange&precision=0&v41)](https://registry.my-netdata.io/#netdata_registry)
 [![Sessions Served](https://registry.my-netdata.io/api/v1/badge.svg?chart=netdata.registry_sessions&label=sessions%20served&units=null&value_color=yellowgreen&precision=0&v41)](https://registry.my-netdata.io/#netdata_registry)
@@ -10,6 +12,17 @@
 
 
 # netdata
+
+> Aug 28th, 2016
+>
+> [netdata v1.3.0 released!](https://github.com/firehol/netdata/releases)
+>
+> - netdata has **[health monitoring / alarms](https://github.com/firehol/netdata/wiki/health-monitoring)**!
+> - netdata **[generates badges](https://github.com/firehol/netdata/wiki/Generating-Badges)** that can be embeded anywhere!
+> - netdata plugins are now written in python!
+> - new plugins: redis, memcached, nginx_log, ipfs, apache_cache
+
+---
 
 > May 16th, 2016
 >
@@ -22,16 +35,6 @@
 
 ---
 
-May 1st, 2016
-
-##### 320.000+ views, 92.000+ visitors, 28.500+ downloads, 11.000+ github stars, 700+ forks, 1 month!
-
-And it still runs with 600+ git downloads... per day!
-
-**[Check what our users say about netdata](https://github.com/firehol/netdata/issues/148)**.
-
----
-
 **Real-time performance monitoring, done right!**
 
 This is the default dashboard of **netdata**:
@@ -40,7 +43,7 @@ This is the default dashboard of **netdata**:
  - 300+ charts out of the box, 2000+ metrics monitored!
  - zero configuration, zero maintenance, zero dependencies!
 
-Live demo: [http://netdata.firehol.org](http://netdata.firehol.org)
+Live demo: [http://my-netdata.io](http://my-netdata.io)
 
 ![netdata](https://cloud.githubusercontent.com/assets/2662304/14092712/93b039ea-f551-11e5-822c-beadbf2b2a2e.gif)
 
@@ -61,7 +64,7 @@ This is what you get:
 - **Zero maintenance**, you just run it, it does the rest
 - **Custom dashboards** that can be built using simple HTML (no javascript necessary)
 - **Extensible**, you can monitor anything you can get a metric for, using its Plugin API (anything can be a netdata plugin - from BASH to node.js, so you can easily monitor any application, any API)
-- **Embeddable**, it can run anywhere a Linux kernel runs and its charts can be embedded on your web pages too
+- **Embeddable**, it can run anywhere a Linux kernel runs (even IoT) and its charts can be embedded on your web pages too
 
 ---
 
@@ -107,17 +110,25 @@ This is what it currently monitors (most with zero configuration):
 
 - **Users and User Groups resource usage**, by summarizing the process tree per user and group (CPU, memory, disk reads, disk writes, swap, threads, pipes, sockets, etc)
 
-- **Apache web server** mod-status (v2.2, v2.4)
+- **Apache web server** mod-status (v2.2, v2.4) and cache log statistics (multiple servers)
 
-- **Nginx web server** stub-status
+- **Nginx web server** stub-status (multiple servers)
 
 - **mySQL databases** (multiple servers, each showing: bandwidth, queries/s, handlers, locks, issues, tmp operations, connections, binlog metrics, threads, innodb metrics, etc)
+
+- **Redis databases** (multiple servers, each showing: operations, hit rate, memory, keys, clients, slaves)
+
+- **memcached databases** (multiple servers, each showing: bandwidth, connections, items, etc)
 
 - **ISC Bind name server** (multiple servers, each showing: clients, requests, queries, updates, failures and several per view metrics)
 
 - **Postfix email server** message queue (entries, size)
 
-- **Squid proxy server** (clients bandwidth and requests, servers bandwidth and requests) 
+- **exim email server** message queue (emails queued)
+
+- **IPFS** (Bandwidth, Peers)
+
+- **Squid proxy server** (multiple servers, each showing: clients bandwidth and requests, servers bandwidth and requests)
 
 - **Hardware sensors** (temperature, voltage, fans, power, humidity, etc)
 
@@ -127,15 +138,11 @@ This is what it currently monitors (most with zero configuration):
 
 - **PHP-FPM** (multiple instances, each reporting connections, requests, performance)
 
+- **hddtemp** (disk temperatures)
+
 - **SNMP devices** can be monitored too (although you will need to configure these)
 
 And you can extend it, by writing plugins that collect data from any source, using any computer language.
-
----
-
-## Still not convinced?
-
-Read **[Why netdata?](https://github.com/firehol/netdata/wiki/Why-netdata%3F)**
 
 ---
 
@@ -160,4 +167,3 @@ It should run on **any Linux** system. It has been tested on:
 ## Documentation
 
 Check the **[netdata wiki](https://github.com/firehol/netdata/wiki)**.
-

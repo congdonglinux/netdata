@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-'''':; exec "$(command -v python2 || command -v python3 || echo "ERROR python IS NOT AVAILABLE IN THIS SYSTEM")" "$0" "$@" # '''
+'''':; exec "$(command -v python || command -v python3 || command -v python2 || echo "ERROR python IS NOT AVAILABLE IN THIS SYSTEM")" "$0" "$@" # '''
 # -*- coding: utf-8 -*-
 
 # Description: netdata python modules supervisor
@@ -37,11 +37,10 @@ import msg
 try:
     assert sys.version_info >= (3, 1)
     import importlib.machinery
-
+    PY_VERSION = 3
     # change this hack below if we want PY_VERSION to be used in modules
     # import builtins
     # builtins.PY_VERSION = 3
-    PY_VERSION = 3
     msg.info('Using python v3')
 except (AssertionError, ImportError):
     try:
@@ -54,8 +53,15 @@ except (AssertionError, ImportError):
         msg.info('Using python v2')
     except ImportError:
         msg.fatal('Cannot start. No importlib.machinery on python3 or lack of imp on python2')
+# try:
+#     import yaml
+# except ImportError:
+#     msg.fatal('Cannot find yaml library')
 try:
-    import yaml
+    if PY_VERSION == 3:
+        import pyyaml3 as yaml
+    else:
+        import pyyaml2 as yaml
 except ImportError:
     msg.fatal('Cannot find yaml library')
 
@@ -291,6 +297,7 @@ class PythonCharts(object):
         except Exception as e:
             msg.debug("This shouldn't happen. NO " + prefix + " IN LIST:" + str(self.jobs) + " ERROR: " + str(e))
 
+        # TODO remove section below and remove `reason`.
         prefix += ": "
         if reason is None:
             return
@@ -320,19 +327,21 @@ class PythonCharts(object):
         """
         i = 0
         overridden = []
+        msg.debug("all job objects", str(self.jobs))
         while i < len(self.jobs):
             job = self.jobs[i]
             try:
                 if not job.check():
-                    self._stop(job, "failed check")
+                    msg.error(job.chart_name, "check function failed.")
+                    self._stop(job)
                 else:
-                    msg.debug(job.chart_name, ": check succeeded")
+                    msg.debug(job.chart_name, "check succeeded")
                     i += 1
                     try:
                         if job.override_name is not None:
                             new_name = job.__module__ + '_' + job.override_name
                             if new_name in overridden:
-                                msg.error(job.chart_name + " already exists. Stopping '" + job.name + "'")
+                                msg.error(job.override_name + " already exists. Stopping '" + job.name + "'")
                                 self._stop(job)
                                 i -= 1
                             else:
@@ -342,10 +351,15 @@ class PythonCharts(object):
                                 overridden.append(job.chart_name)
                     except Exception:
                         pass
-            except AttributeError:
-                self._stop(job, "no check")
+            except AttributeError as e:
+                self._stop(job)
+                msg.error(job.chart_name, "cannot find check() function or it thrown unhandled exception.")
+                msg.debug(str(e))
             except (UnboundLocalError, Exception) as e:
-                self._stop(job, "misbehaving. Reason:" + str(e))
+                msg.error(job.chart_name, str(e))
+                self._stop(job)
+        msg.debug("overridden job names:", str(overridden))
+        msg.debug("all remaining job objects:", str(self.jobs))
 
     def create(self):
         """
@@ -359,7 +373,8 @@ class PythonCharts(object):
             job = self.jobs[i]
             try:
                 if not job.create():
-                    self._stop(job, "failed create")
+                    msg.error(job.chart_name, "create function failed.")
+                    self._stop(job)
                 else:
                     chart = job.chart_name
                     sys.stdout.write(
@@ -375,9 +390,11 @@ class PythonCharts(object):
                     # sys.stdout.flush()
                     i += 1
             except AttributeError:
-                self._stop(job, "no create")
+                msg.error(job.chart_name, "cannot find create() function or it thrown unhandled exception.")
+                self._stop(job)
             except (UnboundLocalError, Exception) as e:
-                self._stop(job, "misbehaving. Reason: " + str(e))
+                msg.error(job.chart_name, str(e))
+                self._stop(job)
 
     def update(self):
         """
@@ -460,6 +477,8 @@ def run():
     configfile = CONFIG_DIR + "python.d.conf"
     msg.PROGRAM = PROGRAM
     msg.info("reading configuration file:", configfile)
+    log_counter = 200
+    log_interval = 3600
 
     conf = read_config(configfile)
     if conf is not None:
@@ -478,6 +497,14 @@ def run():
             DEBUG_FLAG = conf['debug']
         except (KeyError, TypeError):
             pass
+        try:
+            log_counter = conf['logs_per_interval']
+        except (KeyError, TypeError):
+            pass
+        try:
+            log_interval = conf['log_interval']
+        except (KeyError, TypeError):
+            pass
         for k, v in conf.items():
             if k in ("update_every", "debug", "enabled"):
                 continue
@@ -487,6 +514,8 @@ def run():
     # parse passed command line arguments
     modules = parse_cmdline(MODULES_DIR, *sys.argv)
     msg.DEBUG_FLAG = DEBUG_FLAG
+    msg.LOG_COUNTER = log_counter
+    msg.LOG_INTERVAL = log_interval
     msg.info("MODULES_DIR='" + MODULES_DIR +
              "', CONFIG_DIR='" + CONFIG_DIR +
              "', UPDATE_EVERY=" + str(BASE_CONFIG['update_every']) +
